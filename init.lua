@@ -238,7 +238,12 @@ local function decodeCwdPath(encodedDir)
         end
         if #tokens == 0 then return basePath end
         -- Try greedily matching longest existing directory names
-        local function tryResolve(idx, currentPath)
+        local function tryResolve(idx, currentPath, depth)
+            depth = depth or 0
+            if depth > 50 then
+                log("Path resolution depth limit reached: " .. currentPath)
+                return currentPath
+            end
             if idx > #tokens then return currentPath end
             local accumulated = tokens[idx]
             for j = idx, #tokens do
@@ -251,21 +256,26 @@ local function decodeCwdPath(encodedDir)
                     return candidate
                 end
                 if hs.fs.attributes(candidate, "mode") == "directory" then
-                    local result = tryResolve(j + 1, candidate)
+                    local result = tryResolve(j + 1, candidate, depth + 1)
                     if result then return result end
                 end
             end
             -- Fallback: treat each token as a directory
-            return tryResolve(idx + 1, currentPath .. "/" .. tokens[idx])
+            return tryResolve(idx + 1, currentPath .. "/" .. tokens[idx], depth + 1)
         end
         return tryResolve(1, basePath)
     end
     local result = ""
     for i, seg in ipairs(segments) do
+        local actualSeg = seg
         if i > 1 or (parts[1] == ".") then
-            result = result .. "/."
+            -- This segment represents a hidden directory (starts with .)
+            actualSeg = "." .. seg
         end
-        result = resolveSegment(result, seg)
+        result = resolveSegment(result, actualSeg)
+        if not hs.fs.attributes(result, "mode") then
+            log("Warning: resolved path may not exist: " .. result)
+        end
     end
     return result
 end
@@ -1968,19 +1978,51 @@ function obj:launchClaudeWithTaskList()
 
     local claudeDir = os.getenv("HOME") .. "/.claude"
     local shell = getShell()
-    local shellCmd = string.format("cd %s && CLAUDE_CODE_TASK_LIST_ID=%s claude", claudeDir, taskListId)
+    local claudePath = discoverClaudePath() or "claude"
+
+    -- Shell escape helper for single-quoted strings
+    local function shellEscape(str)
+        return str:gsub("'", "'\\''")
+    end
+
+    local shellCmd = string.format("cd '%s' && CLAUDE_CODE_TASK_LIST_ID='%s' '%s'",
+        shellEscape(claudeDir), shellEscape(taskListId), shellEscape(claudePath))
 
     log("Launching Claude: " .. shellCmd)
 
-    local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
-        if exitCode ~= 0 then
-            log("Terminal launch error: " .. (stderr or "unknown"))
+    -- iTerm2: use AppleScript since it doesn't support -e shell -c cmd args
+    if terminalPath:find("iTerm") then
+        local escapedCmd = shellCmd:gsub("\\", "\\\\"):gsub('"', '\\"')
+        local script = [[
+            tell application "iTerm"
+                set newWindow to (create window with default profile)
+                tell current session of newWindow
+                    write text "]] .. escapedCmd .. [["
+                end tell
+                activate
+            end tell
+        ]]
+        local success, _, rawError = hs.osascript.applescript(script)
+        if not success then
+            local errorMsg = "iTerm2 launch failed"
+            if rawError and rawError.NSLocalizedDescription then
+                errorMsg = errorMsg .. ": " .. rawError.NSLocalizedDescription
+            end
+            log("AppleScript error: " .. hs.inspect(rawError))
+            hs.alert.show(errorMsg, 3)
+            return
         end
-    end, {
-        "-e", shell, "-c", shellCmd
-    })
+    else
+        local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
+            if exitCode ~= 0 then
+                log("Terminal launch error: " .. (stderr or "unknown"))
+            end
+        end, {
+            "-e", shell, "-c", shellCmd
+        })
+        task:start()
+    end
 
-    task:start()
     hs.alert.show("Launching Claude...", 1)
 end
 
@@ -2003,7 +2045,14 @@ function obj:launchClaudeWithCwd(sessionId, cwd)
 
     local shell = getShell()
     local claudePath = discoverClaudePath() or "claude"
-    local shellCmd = string.format("cd '%s' && CLAUDE_CODE_TASK_LIST_ID=%s %s -r %s", cwd, sessionId, claudePath, sessionId)
+
+    -- Shell escape helper for single-quoted strings
+    local function shellEscape(str)
+        return str:gsub("'", "'\\''")
+    end
+
+    local shellCmd = string.format("cd '%s' && CLAUDE_CODE_TASK_LIST_ID='%s' '%s' -r '%s'",
+        shellEscape(cwd), shellEscape(sessionId), shellEscape(claudePath), shellEscape(sessionId))
 
     log("Launching Claude with cwd: " .. shellCmd)
 
@@ -2012,14 +2061,23 @@ function obj:launchClaudeWithCwd(sessionId, cwd)
         local escapedCmd = shellCmd:gsub("\\", "\\\\"):gsub('"', '\\"')
         local script = [[
             tell application "iTerm"
-                activate
-                create window with default profile
-                tell current session of current window
+                set newWindow to (create window with default profile)
+                tell current session of newWindow
                     write text "]] .. escapedCmd .. [["
                 end tell
+                activate
             end tell
         ]]
-        hs.osascript.applescript(script)
+        local success, _, rawError = hs.osascript.applescript(script)
+        if not success then
+            local errorMsg = "iTerm2 launch failed"
+            if rawError and rawError.NSLocalizedDescription then
+                errorMsg = errorMsg .. ": " .. rawError.NSLocalizedDescription
+            end
+            log("AppleScript error: " .. hs.inspect(rawError))
+            hs.alert.show(errorMsg, 3)
+            return
+        end
     else
         local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
             if exitCode ~= 0 then
