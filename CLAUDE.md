@@ -126,7 +126,7 @@ See README.md for complete API documentation. Key methods:
 - `obj:start()`, `obj:stop()`, `obj:show()`, `obj:hide()`, `obj:toggle()`
 - `obj:refresh()`, `obj:setTaskListId()`, `obj:createTask()`, `obj:quickTaskUpdate()`
 - `obj:launchClaudeWithTaskList()`, `obj:launchClaudeWithCwd()`, `obj:launchClaudeWithSession()`, `obj:launchClaudeHandoff()`
-- `obj:configure()`, `obj:checkForUpdates()`, `obj:status()`, `obj:bindHotkeys()`
+- `obj:configure()`, `obj:checkForUpdates()`, `obj:status()`, `obj:bindHotkeys()`, `obj:bindShortcuts()`
 
 ### Launch Methods
 
@@ -164,6 +164,7 @@ WebView embedded shortcuts (in `html.lua`):
 - `k` - Previous task
 - `Space` - View task detail
 - `Enter` - Launch Claude session for focused task
+- `Cmd+Backspace` - Delete task (with confirmation)
 
 **Mode switching (global, works even in input fields)**:
 - `/` - Search mode (filter tasks by subject/description)
@@ -178,6 +179,33 @@ WebView embedded shortcuts (in `html.lua`):
 Default Hammerspoon hotkeys (configurable via `bindHotkeys`):
 - `Opt+.` - Toggle task viewer (focuses window for keyboard input)
 - `Cmd+Alt+T` - Show status summary
+
+### Customizable Shortcuts (`bindShortcuts`)
+
+WebView navigation shortcuts are customizable via `obj:bindShortcuts()`. The default bindings are defined in `obj.defaultShortcuts`:
+
+```lua
+obj.defaultShortcuts = {
+    navigateDown = {modifiers = {}, keys = {'j', 'ㅓ', 'ArrowDown'}},
+    navigateUp = {modifiers = {}, keys = {'k', 'ㅏ', 'ArrowUp'}},
+    deleteTask = {modifiers = {'cmd'}, keys = {'Backspace'}},
+    openTask = {modifiers = {}, keys = {' '}},
+    launchTask = {modifiers = {}, keys = {'Enter'}},
+}
+```
+
+**Binding format**:
+- `modifiers`: Array of modifier keys (`'cmd'`, `'alt'`, `'ctrl'`, `'shift'`)
+- `keys`: Array of key names (supports multiple keys for same action, e.g., Korean keyboard)
+
+**Usage**:
+```lua
+spoon.ClaudeTasks:bindShortcuts({
+    deleteTask = {modifiers = {'cmd', 'shift'}, keys = {'Backspace', 'Delete'}},
+})
+```
+
+Partial overrides are supported - only specified bindings are changed, others use defaults.
 
 ## Dependencies
 

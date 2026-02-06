@@ -56,6 +56,9 @@ obj.config = {
     -- Update Checker
     checkForUpdates = true,
     updateCheckInterval = 86400,
+
+    -- WebView Key Bindings (initialized in init() from defaultShortcuts)
+    keyBindings = nil,
 }
 
 -- ============================================================================
@@ -84,7 +87,7 @@ local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils)
+    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
@@ -110,6 +113,8 @@ local function actionHandler(action, params)
         obj:launchClaudeHandoff(params.sessionId, params.cwd)
     elseif action == "showTaskDetail" then
         obj:showTaskDetailWindow(params.subject, params.description, params.metadata)
+    elseif action == "deleteTask" then
+        obj:deleteTask(params.taskId, params.sessionId)
     end
 end
 
@@ -130,6 +135,10 @@ end
 
 function obj:init()
     obj.state.configPath = obj.spoonPath .. "/state.json"
+    -- Initialize keyBindings from defaultShortcuts (single source of truth)
+    if not obj.config.keyBindings then
+        obj.config.keyBindings = obj.defaultShortcuts
+    end
     log("ClaudeTasks Spoon initialized")
     return self
 end
@@ -299,6 +308,45 @@ end
 function obj:showTaskDetailWindow(subject, description, metadata)
     webviewModule.showTaskDetailWindow(subject, description, metadata, utils, log)
     return self
+end
+
+function obj:deleteTask(taskId, sessionId)
+    -- Input validation
+    if not taskId or not sessionId then
+        log("deleteTask: taskId or sessionId is nil")
+        hs.alert.show("Failed to delete task", 2)
+        return false
+    end
+
+    -- Path traversal prevention: block ../ and path separators
+    if taskId:match("%.%.") or sessionId:match("%.%.") or
+       taskId:match("[/\\]") or sessionId:match("[/\\]") then
+        log("deleteTask: Invalid characters in taskId or sessionId")
+        hs.alert.show("Failed to delete task", 2)
+        return false
+    end
+
+    local filepath = utils.getTasksDir() .. "/" .. sessionId .. "/" .. taskId .. ".json"
+
+    -- Check file exists
+    if not utils.fileExists(filepath) then
+        log("deleteTask: File not found: " .. filepath)
+        hs.alert.show("Failed to delete task", 2)
+        return false
+    end
+
+    -- Execute deletion with error handling
+    local success, err = os.remove(filepath)
+    if not success then
+        log("deleteTask: Failed to delete: " .. filepath .. " - " .. (err or "unknown error"))
+        hs.alert.show("Failed to delete task", 2)
+        return false
+    end
+
+    log("deleteTask: Deleted " .. filepath)
+    hs.alert.show("Task deleted", 1)
+    obj:refresh()
+    return true
 end
 
 function obj:showQuickTaskDialog()
@@ -584,7 +632,7 @@ function obj:status()
 end
 
 -- ============================================================================
--- Hotkey Binding
+-- Hotkey, Shortcuts Binding
 -- ============================================================================
 
 obj.defaultHotkeys = {
@@ -607,6 +655,41 @@ function obj:bindHotkeys(mapping)
         overlay = function() obj:toggleOverlay() end
     }
     hs.spoons.bindHotkeysToSpec(def, mapping)
+    return self
+end
+
+obj.defaultShortcuts = {
+    navigateDown = {modifiers = {}, keys = {'j', 'ㅓ', 'ArrowDown'}},
+    navigateUp = {modifiers = {}, keys = {'k', 'ㅏ', 'ArrowUp'}},
+    deleteTask = {modifiers = {'cmd'}, keys = {'Backspace'}},
+    openTask = {modifiers = {}, keys = {' '}},
+    launchTask = {modifiers = {}, keys = {'Enter'}},
+}
+
+function obj:bindShortcuts(mapping)
+    -- Input validation
+    if mapping ~= nil and type(mapping) ~= "table" then
+        log("bindShortcuts: mapping must be a table, got " .. type(mapping))
+        return self
+    end
+
+    local shortcuts = {}
+    for k, v in pairs(obj.defaultShortcuts) do
+        shortcuts[k] = v
+    end
+    if mapping then
+        for name, binding in pairs(mapping) do
+            if type(binding) ~= "table" then
+                log("bindShortcuts: Invalid binding for '" .. tostring(name) .. "' (not a table)")
+            elseif not binding.keys then
+                log("bindShortcuts: Invalid binding for '" .. tostring(name) .. "' (missing 'keys')")
+            else
+                shortcuts[name] = binding
+            end
+        end
+    end
+    obj.config.keyBindings = shortcuts
+    log("Shortcuts bound: " .. hs.json.encode(shortcuts))
     return self
 end
 

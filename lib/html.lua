@@ -76,7 +76,7 @@ function M.generateCwdDisplay(task, utils)
 end
 
 -- Generate full HTML for task viewer
-function M.generateHTML(tasks, sessions, currentSessionValue, utils)
+function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
@@ -99,6 +99,12 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             utils.escapeHtml(sessionId)
         )
     end
+
+    -- Generate keyBindings JavaScript (no fallback - config.keyBindings must be set)
+    if not config or not config.keyBindings then
+        error("html.generateHTML: config.keyBindings is required")
+    end
+    local keyBindingsJson = hs.json.encode(config.keyBindings)
 
     local html = [[
 <!DOCTYPE html>
@@ -567,12 +573,45 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
         }
     </style>
     <script>
+        const keyBindings = ]] .. keyBindingsJson .. [[;
+
         let isCreating = false;
         let formCollapsed = true;
         let focusedIndex = -1;
         let currentMode = 'session'; // 'session' | 'search'
         let searchDebounceTimer = null;
         let helpVisible = false;
+
+        // Check if a key matches a binding
+        // Format: {modifiers: ['cmd'], keys: ['Backspace']}
+        function matchesBinding(e, bindingName) {
+            const binding = keyBindings[bindingName];
+            if (!binding) {
+                console.warn('matchesBinding: Unknown binding "' + bindingName + '"');
+                return false;
+            }
+            if (!binding.keys) return false;
+
+            const modifiers = binding.modifiers || [];
+            const keys = binding.keys;
+
+            // Check if key matches any of the keys
+            const keyMatches = keys.includes(e.key);
+            if (!keyMatches) return false;
+
+            // Check modifiers
+            const cmdRequired = modifiers.includes('cmd');
+            const altRequired = modifiers.includes('alt');
+            const ctrlRequired = modifiers.includes('ctrl');
+            const shiftRequired = modifiers.includes('shift');
+
+            const cmdMatches = cmdRequired ? e.metaKey : !e.metaKey;
+            const altMatches = altRequired ? e.altKey : !e.altKey;
+            const ctrlMatches = ctrlRequired ? e.ctrlKey : !e.ctrlKey;
+            const shiftMatches = shiftRequired ? e.shiftKey : !e.shiftKey;
+
+            return cmdMatches && altMatches && ctrlMatches && shiftMatches;
+        }
 
         // Release focus to navigation mode
         function releaseToNavigation() {
@@ -750,6 +789,34 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             }
         }
 
+        function deleteFocusedTask() {
+            const tasks = getVisibleTasks();
+            if (focusedIndex < 0 || focusedIndex >= tasks.length) {
+                console.warn('deleteFocusedTask: No task focused');
+                return;
+            }
+
+            const task = tasks[focusedIndex];
+            const taskId = task.dataset.taskId;
+            const sessionId = task.dataset.sessionId;
+
+            if (!taskId || !sessionId) {
+                console.warn('deleteFocusedTask: Missing task-id or session-id');
+                return;
+            }
+
+            const subjectEl = task.querySelector('.task-subject');
+            const title = subjectEl ? subjectEl.textContent.trim() : 'this task';
+
+            if (confirm('Delete "' + title + '"?\n\nThis cannot be undone.')) {
+                window.webkit.messageHandlers.taskBridge.postMessage({
+                    action: 'deleteTask',
+                    taskId: taskId,
+                    sessionId: sessionId
+                });
+            }
+        }
+
         // Toggle between modes (for button click)
         function toggleMode() {
             setMode(currentMode === 'search' ? 'session' : 'search');
@@ -885,26 +952,30 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             }
 
             // vim-like navigation (only when not in input)
-            // Korean mappings: j→ㅓ, k→ㅏ
             if (!isInputFocused) {
-                if (e.key === 'j' || e.key === 'ㅓ') {
+                if (matchesBinding(e, 'navigateDown')) {
                     e.preventDefault();
                     updateFocus(focusedIndex + 1);
                     return;
                 }
-                if (e.key === 'k' || e.key === 'ㅏ') {
+                if (matchesBinding(e, 'navigateUp')) {
                     e.preventDefault();
                     updateFocus(focusedIndex - 1);
                     return;
                 }
-                if (e.key === ' ') {
+                if (matchesBinding(e, 'openTask')) {
                     e.preventDefault();
                     openFocusedTask();
                     return;
                 }
-                if (e.key === 'Enter') {
+                if (matchesBinding(e, 'launchTask')) {
                     e.preventDefault();
                     launchFocusedTask();
+                    return;
+                }
+                if (matchesBinding(e, 'deleteTask')) {
+                    e.preventDefault();
+                    deleteFocusedTask();
                     return;
                 }
             }
@@ -966,7 +1037,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
             local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
             html = html .. [[
-        <div class="task">
+        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[">
             <span class="task-icon status-in_progress">]] .. M.getStatusIcon("in_progress") .. [[</span>
             <div class="task-content">
                 <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
@@ -1006,7 +1077,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
             local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
             html = html .. [[
-        <div class="task">
+        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[">
             <span class="task-icon status-pending">]] .. M.getStatusIcon("pending") .. [[</span>
             <div class="task-content">
                 <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
@@ -1044,7 +1115,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
             local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
             html = html .. [[
-        <div class="task" style="opacity: 0.6;">
+        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[" style="opacity: 0.6;">
             <span class="task-icon status-completed">]] .. M.getStatusIcon("completed") .. [[</span>
             <div class="task-content">
                 <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
@@ -1088,6 +1159,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils)
             <div class="help-row"><span class="help-key">k / ㅏ</span><span class="help-desc">Previous task</span></div>
             <div class="help-row"><span class="help-key">Space</span><span class="help-desc">View detail</span></div>
             <div class="help-row"><span class="help-key">Enter</span><span class="help-desc">Launch Claude</span></div>
+            <div class="help-row"><span class="help-key">⌘⌫</span><span class="help-desc">Delete task</span></div>
         </div>
         <div class="help-section">
             <div class="help-section-title">Mode</div>

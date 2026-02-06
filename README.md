@@ -9,7 +9,9 @@ Hammerspoon Spoon for viewing Claude Code tasks in a floating window.
 ## Features
 
 - Floating task viewer with WebView UI
-- **Vim-like keyboard navigation** (j/k to move, Space to view, Enter to launch)
+- **Vim-like keyboard navigation** (j/k or ↑/↓ to move, Space to view, Enter to launch)
+- **Customizable key bindings** - configure all keyboard shortcuts
+- **Task deletion** with keyboard shortcut (⌘⌫)
 - **Task search/filtering** with real-time results
 - Auto-refresh on file changes via pathwatcher
 - Session selector with datalist autocomplete
@@ -52,15 +54,18 @@ spoon.ClaudeTasks:start()
 
 | Key | Action |
 |-----|--------|
-| `j` / `k` | Navigate tasks (vim-like) |
+| `j` / `k` / `↓` / `↑` | Navigate tasks |
 | `Space` | View task detail |
 | `Enter` | Launch Claude session |
+| `⌘⌫` | Delete selected task |
 | `/` | Search mode |
 | `=` | Session input mode |
 | `Escape` | Return to navigation |
 | `?` | Show shortcuts help |
 | `⌘E` | Quick Task dialog |
 | `⌘Enter` | Create task |
+
+All keyboard shortcuts can be customized via `bindShortcuts()`.
 
 ### Custom Configuration
 
@@ -77,8 +82,16 @@ spoon.ClaudeTasks:configure({
     shell = "/bin/bash",
 })
 spoon.ClaudeTasks:bindHotkeys({
-    toggle = {{"cmd", "alt"}, "T"},
-    status = {{"cmd", "alt", "shift"}, "T"}
+    toggle = {{"cmd", "shift"}, "t"},
+    status = {{"cmd", "alt"}, "t"}
+})
+-- You can customize all in-app keyboard shortcuts
+spoon.ClaudeTasks:bindShortcuts({
+    navigateDown = {modifiers = {}, keys = {'j', 'ㅓ', 'ArrowDown'}},
+    navigateUp = {modifiers = {}, keys = {'k', 'ㅏ', 'ArrowUp'}},
+    deleteTask = {modifiers = {'cmd'}, keys = {'Backspace'}},
+    openTask = {modifiers = {}, keys = {' '}},
+    launchTask = {modifiers = {}, keys = {'Enter'}},
 })
 spoon.ClaudeTasks:start()
 ```
@@ -101,6 +114,7 @@ spoon.ClaudeTasks:start()
 - `obj:launchClaudeWithCwd(sessionId, cwd)` - Launch Claude with specific working directory
 - `obj:launchClaudeWithSession(sessionId)` - Launch Claude with session env var
 - `obj:showTaskDetailWindow(subject, description, metadata)` - Show task detail popup
+- `obj:deleteTask(taskId, sessionId)` - Delete a task by ID
 - `obj:status()` - Get current status info
 - `obj:configure(options)` - Update configuration
 - `obj:bindHotkeys(mapping)` - Bind hotkeys
@@ -118,6 +132,7 @@ spoon.ClaudeTasks:start()
 | `claudePath` | nil | Path to claude CLI (auto-discovered if nil) |
 | `terminalApp` | nil | Path to terminal app (auto-discovered if nil) |
 | `shell` | nil | Shell to use (defaults to `$SHELL` or `/bin/zsh`) |
+| `keyBindings` | (see below) | Customizable keyboard shortcuts (use `bindShortcuts()`) |
 
 ## Requirements
 
