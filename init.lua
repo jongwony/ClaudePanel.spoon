@@ -130,6 +130,10 @@ end
 local function actionHandler(action, params)
     if action == "setMode" then
         currentMode = params.value or 'session'
+        if currentMode == 'memory' then
+            invalidateMemoryCache()
+            refreshWebView()
+        end
     elseif action == "setSession" then
         obj:setTaskListId(params.value)
     elseif action == "createTask" then
