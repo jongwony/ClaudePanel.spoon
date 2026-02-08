@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ClaudeTasks.spoon is a Hammerspoon Spoon that provides a floating WebView-based task viewer for Claude Code tasks stored in `~/.claude/tasks/`.
+ClaudePanel.spoon is a Hammerspoon Spoon that provides a floating WebView-based dashboard for Claude Code tasks, project memory, and search stored in `~/.claude/`.
 
 ## Architecture
 
 Modular Spoon architecture with coordinator pattern:
 
 ```
-ClaudeTasks.spoon/
+ClaudePanel.spoon/
 ├── init.lua              # Thin coordinator, routes WebView actions to modules
 ├── lib/
 │   ├── utils.lua         # Pure utilities: log, file ops, JSON, HTML escape
@@ -20,6 +20,7 @@ ClaudeTasks.spoon/
 │   ├── tasks.lua         # Task loading and CWD extraction
 │   ├── html.lua          # HTML/CSS/JS generation
 │   ├── webview.lua       # WebView management (main, detail, quickTask)
+│   ├── memory.lua        # Memory file discovery, search, and loading
 │   ├── watcher.lua       # File system watcher with debounce
 │   └── updater.lua       # GitHub release update checker
 ├── state.json
@@ -64,14 +65,15 @@ WebView communicates with Lua via `hs.webview.usercontent`. JavaScript calls `we
 
 ### Mode System (html.lua)
 
-UI has two input modes managed by `currentMode` variable:
+UI has three modes managed by `currentMode` variable:
 - `'session'` - Session ID input (default)
 - `'search'` - Task filtering
+- `'memory'` - Memory file browsing
 
 Key functions:
-- `setMode(mode)` - Switch mode, release task focus, focus input field
+- `setMode(mode)` - Switch mode, reset focus state, focus appropriate input field
 - `releaseToNavigation()` - Blur input, clear task focus for j/k navigation
-- `toggleMode()` - Toggle between modes (for button click)
+- `/` key cycles through modes: session → search → memory → session
 
 ### Task File Structure
 
@@ -81,7 +83,7 @@ Tasks are stored in `~/.claude/tasks/{sessionId}/*.json`. Each session directory
 
 Claude Code encodes working directory paths in session IDs:
 - `/` → `-` (path separator)
-- `.` → `-` (dot in filenames, e.g., `ClaudeTasks.spoon` → `ClaudeTasks-spoon`)
+- `.` → `-` (dot in filenames, e.g., `ClaudePanel.spoon` → `ClaudePanel-spoon`)
 - `/.` → `--` (dot directories, e.g., `/.claude` → `--claude`)
 
 The `tasks.decodeCwdPath()` function resolves ambiguity by backtracking through all interpretations of `-` (as `/`, `.`, or literal `-`) and validating against the filesystem. This is critical for the "Launch Claude" feature.
@@ -95,11 +97,11 @@ lua tests/test_tasks.lua
 
 **Integration testing**: Reload in Hammerspoon console:
 ```lua
-hs.loadSpoon("ClaudeTasks")
-spoon.ClaudeTasks:start()
+hs.loadSpoon("ClaudePanel")
+spoon.ClaudePanel:start()
 ```
 
-**Debug mode**: Enable logging via `spoon.ClaudeTasks:configure({debugMode = true})`
+**Debug mode**: Enable logging via `spoon.ClaudePanel:configure({debugMode = true})`
 
 ## Key Conventions
 
@@ -115,8 +117,8 @@ spoon.ClaudeTasks:start()
 Built-in update checker uses GitHub API to check for new releases:
 
 - **Auto-check**: Runs on `start()` with 24-hour interval (configurable)
-- **Manual check**: `spoon.ClaudeTasks:checkForUpdates(true)`
-- **Disable**: `spoon.ClaudeTasks:configure({checkForUpdates = false})`
+- **Manual check**: `spoon.ClaudePanel:checkForUpdates(true)`
+- **Disable**: `spoon.ClaudePanel:configure({checkForUpdates = false})`
 
 SpoonInstall compatible via `docs.json` metadata file.
 
@@ -127,6 +129,7 @@ See README.md for complete API documentation. Key methods:
 - `obj:refresh()`, `obj:setTaskListId()`, `obj:createTask()`, `obj:quickTaskUpdate()`
 - `obj:launchClaudeWithTaskList()`, `obj:launchClaudeWithCwd()`, `obj:launchClaudeWithSession()`, `obj:launchClaudeHandoff()`
 - `obj:configure()`, `obj:checkForUpdates()`, `obj:status()`, `obj:bindHotkeys()`, `obj:bindShortcuts()`
+- `obj:showMemoryDetail()`, `obj:openMemoryInEditor()`
 
 ### Launch Methods
 
@@ -167,8 +170,7 @@ WebView embedded shortcuts (in `html.lua`):
 - `Cmd+Backspace` - Delete task (with confirmation)
 
 **Mode switching (global, works even in input fields)**:
-- `/` - Search mode (filter tasks by subject/description)
-- `=` - Session input mode
+- `/` - Cycle tabs (Tasks → Search → Memory)
 - `Escape` / `Ctrl+[` - Return to navigation mode
 
 **Other**:
@@ -200,7 +202,7 @@ obj.defaultShortcuts = {
 
 **Usage**:
 ```lua
-spoon.ClaudeTasks:bindShortcuts({
+spoon.ClaudePanel:bindShortcuts({
     deleteTask = {modifiers = {'cmd', 'shift'}, keys = {'Backspace', 'Delete'}},
 })
 ```

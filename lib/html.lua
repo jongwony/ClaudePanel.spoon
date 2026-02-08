@@ -76,7 +76,7 @@ function M.generateCwdDisplay(task, utils)
 end
 
 -- Generate full HTML for task viewer
-function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
+function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData, currentMode)
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
@@ -176,7 +176,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
             background: rgba(255, 255, 255, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.2);
             color: #e5e5e5;
-            padding: 6px 10px;
+            padding: 6px 10px 6px 28px;
             border-radius: 4px;
             font-size: 12px;
             width: 100%;
@@ -420,7 +420,39 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
         .task-handoff-btn:hover {
             background: #7c3aed;
         }
-        /* Search/Session toggle */
+        /* Tab bar */
+        .tab-bar {
+            display: flex;
+            align-items: center;
+            gap: 2px;
+            margin-bottom: 8px;
+        }
+        .tab-btn {
+            background: none;
+            border: none;
+            border-bottom: 2px solid transparent;
+            color: #666;
+            padding: 4px 10px;
+            cursor: pointer;
+            font-size: 11px;
+            font-weight: 500;
+            letter-spacing: 0.3px;
+            transition: color 0.15s, border-color 0.15s;
+        }
+        .tab-btn:hover {
+            color: #aaa;
+        }
+        .tab-btn.active {
+            color: #e5e5e5;
+            border-bottom-color: #3b82f6;
+        }
+        .tab-btn.active.memory-tab {
+            border-bottom-color: #a78bfa;
+        }
+        .tab-spacer {
+            flex: 1;
+        }
+        /* Input row */
         .input-row {
             display: flex;
             gap: 8px;
@@ -429,29 +461,6 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
         .input-container {
             flex: 1;
             position: relative;
-        }
-        .toggle-btn {
-            background: rgba(255, 255, 255, 0.1);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            color: #888;
-            width: 32px;
-            height: 32px;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 14px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            flex-shrink: 0;
-        }
-        .toggle-btn:hover {
-            background: rgba(255, 255, 255, 0.15);
-            color: #e5e5e5;
-        }
-        .toggle-btn.active {
-            background: rgba(59, 130, 246, 0.2);
-            border-color: #3b82f6;
-            color: #60a5fa;
         }
         .search-input {
             background: rgba(255, 255, 255, 0.1);
@@ -487,6 +496,135 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
             font-style: italic;
             padding: 12px;
             text-align: center;
+        }
+        /* Memory mode */
+        .memory-list {
+            display: none;
+        }
+        .memory-list.visible {
+            display: block;
+        }
+        .memory-project {
+            margin-bottom: 12px;
+        }
+        .memory-project-header {
+            font-size: 10px;
+            font-weight: 500;
+            color: #555;
+            margin-bottom: 4px;
+            padding-left: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .memory-file-path {
+            font-size: 10px;
+            color: #555;
+            margin-top: 2px;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            max-width: 280px;
+        }
+        .memory-file {
+            background: rgba(255, 255, 255, 0.05);
+            border-radius: 8px;
+            padding: 10px 12px;
+            margin-bottom: 6px;
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            cursor: pointer;
+        }
+        .memory-file:hover {
+            background: rgba(255, 255, 255, 0.08);
+        }
+        .memory-file.focused {
+            outline: 2px solid #3b82f6;
+            outline-offset: -2px;
+        }
+        .memory-file-icon {
+            font-size: 14px;
+            flex-shrink: 0;
+            color: #a78bfa;
+        }
+        .memory-file-content {
+            flex: 1;
+            min-width: 0;
+        }
+        .memory-file-name {
+            font-weight: 500;
+            color: #fff;
+            font-size: 13px;
+        }
+        .memory-file-modified {
+            font-size: 11px;
+            color: #666;
+            margin-top: 2px;
+        }
+        .memory-file-actions {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+            flex-shrink: 0;
+        }
+        .memory-edit-btn {
+            background: rgba(255, 255, 255, 0.1);
+            border: none;
+            color: #888;
+            width: 28px;
+            height: 28px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .memory-edit-btn:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #e5e5e5;
+        }
+        .memory-current-badge {
+            font-size: 9px;
+            background: rgba(59, 130, 246, 0.2);
+            padding: 2px 6px;
+            border-radius: 4px;
+            color: #60a5fa;
+            margin-left: 6px;
+            text-transform: none;
+            letter-spacing: normal;
+        }
+        .memory-empty {
+            color: #555;
+            font-style: italic;
+            padding: 20px;
+            text-align: center;
+        }
+        .action-btn {
+            background: rgba(34, 197, 94, 0.15);
+            border: 1px solid rgba(34, 197, 94, 0.3);
+            color: #22c55e;
+            width: 32px;
+            height: 32px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+            margin-left: 4px;
+        }
+        .action-btn:hover {
+            background: rgba(34, 197, 94, 0.25);
+            color: #4ade80;
+        }
+        .action-btn:disabled {
+            background: rgba(75, 85, 99, 0.2);
+            border-color: rgba(75, 85, 99, 0.3);
+            color: #4b5563;
+            cursor: not-allowed;
         }
         /* Help popup */
         .help-btn {
@@ -578,9 +716,10 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
         let isCreating = false;
         let formCollapsed = true;
         let focusedIndex = -1;
-        let currentMode = 'session'; // 'session' | 'search'
+        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'memory'
         let searchDebounceTimer = null;
         let helpVisible = false;
+        let memoryFocusedIndex = -1;
 
         // Check if a key matches a binding
         // Format: {modifiers: ['cmd'], keys: ['Backspace']}
@@ -623,30 +762,57 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
         }
 
         // Set input mode
-        function setMode(mode) {
+        // Apply mode UI state without notifying Lua (used for initialization)
+        function applyMode(mode) {
             currentMode = mode;
-            const sessionContainer = document.getElementById('sessionContainer');
-            const searchContainer = document.getElementById('searchContainer');
-            const toggleBtn = document.getElementById('toggleBtn');
+            var sessionContainer = document.getElementById('sessionContainer');
+            var searchContainer = document.getElementById('searchContainer');
+            var memorySearchContainer = document.getElementById('memorySearchContainer');
+            var taskSections = document.getElementById('taskSections');
+            var memoryList = document.getElementById('memoryList');
+
+            // Update tab active states
+            document.querySelectorAll('.tab-btn').forEach(function(t) { t.classList.remove('active'); });
+            var activeTab = document.getElementById('tab-' + mode);
+            if (activeTab) activeTab.classList.add('active');
 
             releaseToNavigation();
+            memoryFocusedIndex = -1;
+            if (memoryList) {
+                memoryList.querySelectorAll('.memory-file').forEach(function(f) { f.classList.remove('focused'); });
+            }
 
             if (mode === 'search') {
                 sessionContainer.classList.add('hidden');
                 searchContainer.classList.remove('hidden');
-                toggleBtn.classList.add('active');
-                toggleBtn.innerHTML = '⊟';
-                toggleBtn.title = 'Session input (=)';
+                if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (taskSections) taskSections.style.display = '';
+                if (memoryList) memoryList.classList.remove('visible');
                 document.getElementById('searchInput').focus();
+            } else if (mode === 'memory') {
+                sessionContainer.classList.add('hidden');
+                searchContainer.classList.add('hidden');
+                if (memorySearchContainer) memorySearchContainer.classList.remove('hidden');
+                if (taskSections) taskSections.style.display = 'none';
+                if (memoryList) memoryList.classList.add('visible');
+                clearSearch();
+                var memSearch = document.getElementById('memorySearchInput');
+                if (memSearch) memSearch.focus();
             } else {
                 sessionContainer.classList.remove('hidden');
                 searchContainer.classList.add('hidden');
-                toggleBtn.classList.remove('active');
-                toggleBtn.innerHTML = '⌕';
-                toggleBtn.title = 'Search tasks (/)';
+                if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (taskSections) taskSections.style.display = '';
+                if (memoryList) memoryList.classList.remove('visible');
                 clearSearch();
                 document.getElementById('sessionInput').focus();
             }
+        }
+
+        // Switch mode and notify Lua (used for user-initiated tab switches)
+        function setMode(mode) {
+            applyMode(mode);
+            window.webkit.messageHandlers.taskBridge.postMessage({action: 'setMode', value: mode});
         }
 
         function toggleForm() {
@@ -817,9 +983,95 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
             }
         }
 
-        // Toggle between modes (for button click)
-        function toggleMode() {
-            setMode(currentMode === 'search' ? 'session' : 'search');
+        // Memory navigation
+        function getVisibleMemoryFiles() {
+            var memoryList = document.getElementById('memoryList');
+            if (!memoryList) return [];
+            return Array.from(memoryList.querySelectorAll('.memory-file:not(.hidden)'));
+        }
+
+        function updateMemoryFocus(newIndex) {
+            var files = getVisibleMemoryFiles();
+            if (files.length === 0) return;
+            newIndex = Math.max(0, Math.min(newIndex, files.length - 1));
+            files.forEach(function(f) { f.classList.remove('focused'); });
+            memoryFocusedIndex = newIndex;
+            var focusedFile = files[memoryFocusedIndex];
+            focusedFile.classList.add('focused');
+            focusedFile.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function openFocusedMemoryFile() {
+            var files = getVisibleMemoryFiles();
+            if (memoryFocusedIndex >= 0 && memoryFocusedIndex < files.length) {
+                files[memoryFocusedIndex].click();
+            }
+        }
+
+        function launchFocusedMemoryFile() {
+            var files = getVisibleMemoryFiles();
+            if (memoryFocusedIndex >= 0 && memoryFocusedIndex < files.length) {
+                var el = files[memoryFocusedIndex];
+                var projectHash = el.dataset.projectHash;
+                var filename = el.dataset.filename;
+                if (projectHash && filename) {
+                    openMemoryInEditor(projectHash, filename);
+                }
+            }
+        }
+
+        function showMemoryDetail(projectHash, filename) {
+            window.webkit.messageHandlers.taskBridge.postMessage({
+                action: 'showMemoryDetail',
+                projectHash: projectHash,
+                filename: filename
+            });
+        }
+
+        function openMemoryInEditor(projectHash, filename, event) {
+            if (event) event.stopPropagation();
+            window.webkit.messageHandlers.taskBridge.postMessage({
+                action: 'openMemoryInEditor',
+                projectHash: projectHash,
+                filename: filename
+            });
+        }
+
+        function filterMemoryFiles(query) {
+            var memoryList = document.getElementById('memoryList');
+            if (!memoryList) return;
+            var normalizedQuery = query.toLowerCase().trim();
+            var projects = memoryList.querySelectorAll('.memory-project');
+            projects.forEach(function(project) {
+                var header = project.querySelector('.memory-project-header');
+                var projectText = header ? header.textContent.toLowerCase() : '';
+                var projectMatch = normalizedQuery && projectText.includes(normalizedQuery);
+                var files = project.querySelectorAll('.memory-file');
+                var visibleInProject = 0;
+                files.forEach(function(file) {
+                    if (!normalizedQuery || projectMatch) {
+                        file.classList.remove('hidden');
+                        visibleInProject++;
+                        return;
+                    }
+                    var name = file.querySelector('.memory-file-name');
+                    var nameText = name ? name.textContent.toLowerCase() : '';
+                    var pathEl = file.querySelector('.memory-file-path');
+                    var pathText = pathEl ? pathEl.textContent.toLowerCase() : '';
+                    if (nameText.includes(normalizedQuery) || pathText.includes(normalizedQuery)) {
+                        file.classList.remove('hidden');
+                        visibleInProject++;
+                    } else {
+                        file.classList.add('hidden');
+                    }
+                });
+                project.style.display = visibleInProject > 0 ? '' : 'none';
+            });
+            memoryFocusedIndex = -1;
+        }
+
+        function onMemorySearchInput(input) {
+            filterMemoryFiles(input.value);
         }
 
         function clearSearch() {
@@ -888,8 +1140,11 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
 
         // Auto-focus first task on load
         document.addEventListener('DOMContentLoaded', function() {
+            if (currentMode !== 'session') {
+                applyMode(currentMode);
+            }
             const tasks = getVisibleTasks();
-            if (tasks.length > 0) {
+            if (currentMode === 'session' && tasks.length > 0) {
                 updateFocus(0);
             }
         });
@@ -925,8 +1180,8 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
                     toggleHelp();
                     return;
                 }
-                // Exit search mode if active
-                if (currentMode === 'search') {
+                // Exit search or memory mode if active
+                if (currentMode === 'search' || currentMode === 'memory') {
                     setMode('session');
                     return;
                 }
@@ -939,44 +1194,66 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
                 return;
             }
 
-            // Mode switching (global)
+            // Tab cycling (global, works even in input fields)
             if (e.key === '/') {
                 e.preventDefault();
-                setMode('search');
-                return;
-            }
-            if (e.key === '=') {
-                e.preventDefault();
-                setMode('session');
+                var modes = ['session', 'search', 'memory'];
+                var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
+                setMode(modes[nextIndex]);
                 return;
             }
 
             // vim-like navigation (only when not in input)
             if (!isInputFocused) {
-                if (matchesBinding(e, 'navigateDown')) {
-                    e.preventDefault();
-                    updateFocus(focusedIndex + 1);
-                    return;
-                }
-                if (matchesBinding(e, 'navigateUp')) {
-                    e.preventDefault();
-                    updateFocus(focusedIndex - 1);
-                    return;
-                }
-                if (matchesBinding(e, 'openTask')) {
-                    e.preventDefault();
-                    openFocusedTask();
-                    return;
-                }
-                if (matchesBinding(e, 'launchTask')) {
-                    e.preventDefault();
-                    launchFocusedTask();
-                    return;
-                }
-                if (matchesBinding(e, 'deleteTask')) {
-                    e.preventDefault();
-                    deleteFocusedTask();
-                    return;
+                if (currentMode === 'memory') {
+                    // Memory mode navigation
+                    if (matchesBinding(e, 'navigateDown')) {
+                        e.preventDefault();
+                        updateMemoryFocus(memoryFocusedIndex + 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'navigateUp')) {
+                        e.preventDefault();
+                        updateMemoryFocus(memoryFocusedIndex - 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'openTask')) {
+                        e.preventDefault();
+                        openFocusedMemoryFile();
+                        return;
+                    }
+                    if (matchesBinding(e, 'launchTask')) {
+                        e.preventDefault();
+                        launchFocusedMemoryFile();
+                        return;
+                    }
+                } else {
+                    // Task mode navigation
+                    if (matchesBinding(e, 'navigateDown')) {
+                        e.preventDefault();
+                        updateFocus(focusedIndex + 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'navigateUp')) {
+                        e.preventDefault();
+                        updateFocus(focusedIndex - 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'openTask')) {
+                        e.preventDefault();
+                        openFocusedTask();
+                        return;
+                    }
+                    if (matchesBinding(e, 'launchTask')) {
+                        e.preventDefault();
+                        launchFocusedTask();
+                        return;
+                    }
+                    if (matchesBinding(e, 'deleteTask')) {
+                        e.preventDefault();
+                        deleteFocusedTask();
+                        return;
+                    }
                 }
             }
         });
@@ -991,8 +1268,16 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
                 <button class="help-btn" onclick="toggleHelp()" title="Keyboard shortcuts (?)">?</button>
             </div>
         </div>
+        <div class="tab-bar">
+            <button id="tab-session" class="tab-btn active" onclick="setMode('session')">Tasks</button>
+            <button id="tab-search" class="tab-btn" onclick="setMode('search')">Search</button>
+            <button id="tab-memory" class="tab-btn memory-tab" onclick="setMode('memory')">Memory</button>
+            <span class="tab-spacer"></span>
+            <button id="quickUpdateBtn" class="action-btn" onclick="showQuickUpdateDialog()" title="Quick Task ⌘E"]] .. (currentSessionValue == '' and ' disabled' or '') .. [[>⚡</button>
+        </div>
         <div class="input-row">
             <div class="input-container" id="sessionContainer">
+                <span class="search-icon">📋</span>
                 <input type="text" class="session-input" id="sessionInput" list="sessionList"
                        value="]] .. utils.escapeHtml(currentSessionValue) .. [["
                        placeholder="Enter or select session..."
@@ -1009,11 +1294,18 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
                        oninput="onSearchInput(this)"
                        onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
             </div>
-            <button id="toggleBtn" class="toggle-btn" onclick="toggleMode()" title="Search tasks (/)">⌕</button>
-            <button id="quickUpdateBtn" class="toggle-btn" onclick="showQuickUpdateDialog()" title="Quick Task ⌘E"]] .. (currentSessionValue == '' and ' disabled' or '') .. [[>⚡</button>
+            <div class="input-container hidden" id="memorySearchContainer">
+                <span class="search-icon">🧠</span>
+                <input type="text" class="search-input" id="memorySearchInput"
+                       placeholder="Filter by filename or project path..."
+                       oninput="onMemorySearchInput(this)"
+                       onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
+            </div>
         </div>
     </div>
 ]]
+
+    html = html .. '    <div id="taskSections">\n'
 
     -- In Progress section
     if #inProgressTasks > 0 then
@@ -1149,6 +1441,56 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
 ]]
     end
 
+    html = html .. '    </div>\n' -- close taskSections
+
+    -- Memory list (hidden by default, shown when memory mode active)
+    html = html .. '    <div id="memoryList" class="memory-list">\n'
+    if memoryData and #memoryData > 0 then
+        for _, project in ipairs(memoryData) do
+            if project.files and #project.files > 0 then
+                local pathDisplay = project.decodedPath or project.hash
+                local currentBadge = project.isCurrent and '<span class="memory-current-badge">current</span>' or ''
+                html = html .. '        <div class="memory-project">\n'
+                html = html .. '            <div class="memory-project-header">'
+                    .. utils.escapeHtml(pathDisplay) .. currentBadge .. '</div>\n'
+                for _, file in ipairs(project.files) do
+                    local modifiedStr = ''
+                    if file.modified then
+                        modifiedStr = os.date('%Y-%m-%d %H:%M', file.modified)
+                    end
+                    local projectHashJson = utils.jsonEncodeString(project.hash)
+                    local filenameJson = utils.jsonEncodeString(file.name)
+                    html = html .. '            <div class="memory-file"'
+                        .. ' data-project-hash="' .. utils.escapeHtml(project.hash) .. '"'
+                        .. ' data-filename="' .. utils.escapeHtml(file.name) .. '"'
+                        .. " onclick='showMemoryDetail(" .. projectHashJson .. ", " .. filenameJson .. ")'>\n"
+                    html = html .. '                <span class="memory-file-icon">📝</span>\n'
+                    html = html .. '                <div class="memory-file-content">\n'
+                    html = html .. '                    <div class="memory-file-name">'
+                        .. utils.escapeHtml(file.name) .. '</div>\n'
+                    if modifiedStr ~= '' then
+                        html = html .. '                    <div class="memory-file-modified">'
+                            .. utils.escapeHtml(modifiedStr) .. '</div>\n'
+                    end
+                    local filePath = '~/.claude/projects/' .. project.hash .. '/memory/' .. file.name
+                    html = html .. '                    <div class="memory-file-path" title="'
+                        .. utils.escapeHtml(filePath) .. '">'
+                        .. utils.escapeHtml(filePath) .. '</div>\n'
+                    html = html .. '                </div>\n'
+                    html = html .. '                <div class="memory-file-actions">\n'
+                    html = html .. "                    <button class='memory-edit-btn' onclick='openMemoryInEditor("
+                        .. projectHashJson .. ", " .. filenameJson .. ", event)' title='Open in editor'>✎</button>\n"
+                    html = html .. '                </div>\n'
+                    html = html .. '            </div>\n'
+                end
+                html = html .. '        </div>\n'
+            end
+        end
+    else
+        html = html .. '        <div class="memory-empty">No memory files found.</div>\n'
+    end
+    html = html .. '    </div>\n'
+
     html = html .. [[
     <div id="helpOverlay" class="help-overlay hidden" onclick="toggleHelp()"></div>
     <div id="helpPopup" class="help-popup hidden">
@@ -1163,8 +1505,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config)
         </div>
         <div class="help-section">
             <div class="help-section-title">Mode</div>
-            <div class="help-row"><span class="help-key">/</span><span class="help-desc">Search mode</span></div>
-            <div class="help-row"><span class="help-key">=</span><span class="help-desc">Session input</span></div>
+            <div class="help-row"><span class="help-key">/</span><span class="help-desc">Cycle tabs</span></div>
             <div class="help-row"><span class="help-key">Esc / ^[</span><span class="help-desc">Back to navigation</span></div>
         </div>
         <div class="help-section">

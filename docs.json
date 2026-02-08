@@ -7,82 +7,82 @@
     "Function": [],
     "Method": [
       {
-        "def": "ClaudeTasks:start() -> self",
+        "def": "ClaudePanel:start() -> self",
         "desc": "Start the module (file watcher, update checker)",
-        "doc": "Start the module (file watcher, update checker)\n\nParameters:\n * None\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Start the module (file watcher, update checker)\n\nParameters:\n * None\n\nReturns:\n * The ClaudePanel object",
         "name": "start",
-        "signature": "ClaudeTasks:start() -> self"
+        "signature": "ClaudePanel:start() -> self"
       },
       {
-        "def": "ClaudeTasks:stop() -> self",
+        "def": "ClaudePanel:stop() -> self",
         "desc": "Stop the module",
-        "doc": "Stop the module\n\nParameters:\n * None\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Stop the module\n\nParameters:\n * None\n\nReturns:\n * The ClaudePanel object",
         "name": "stop",
-        "signature": "ClaudeTasks:stop() -> self"
+        "signature": "ClaudePanel:stop() -> self"
       },
       {
-        "def": "ClaudeTasks:show() -> self",
+        "def": "ClaudePanel:show() -> self",
         "desc": "Show the task viewer",
-        "doc": "Show the task viewer\n\nParameters:\n * None\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Show the task viewer\n\nParameters:\n * None\n\nReturns:\n * The ClaudePanel object",
         "name": "show",
-        "signature": "ClaudeTasks:show() -> self"
+        "signature": "ClaudePanel:show() -> self"
       },
       {
-        "def": "ClaudeTasks:hide() -> self",
+        "def": "ClaudePanel:hide() -> self",
         "desc": "Hide the task viewer",
-        "doc": "Hide the task viewer\n\nParameters:\n * None\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Hide the task viewer\n\nParameters:\n * None\n\nReturns:\n * The ClaudePanel object",
         "name": "hide",
-        "signature": "ClaudeTasks:hide() -> self"
+        "signature": "ClaudePanel:hide() -> self"
       },
       {
-        "def": "ClaudeTasks:toggle() -> self",
+        "def": "ClaudePanel:toggle() -> self",
         "desc": "Toggle the task viewer visibility",
-        "doc": "Toggle the task viewer visibility\n\nParameters:\n * None\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Toggle the task viewer visibility\n\nParameters:\n * None\n\nReturns:\n * The ClaudePanel object",
         "name": "toggle",
-        "signature": "ClaudeTasks:toggle() -> self"
+        "signature": "ClaudePanel:toggle() -> self"
       },
       {
-        "def": "ClaudeTasks:configure(options) -> self",
+        "def": "ClaudePanel:configure(options) -> self",
         "desc": "Configure the Spoon",
-        "doc": "Configure the Spoon\n\nParameters:\n * options - A table with configuration options\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Configure the Spoon\n\nParameters:\n * options - A table with configuration options\n\nReturns:\n * The ClaudePanel object",
         "name": "configure",
-        "signature": "ClaudeTasks:configure(options) -> self"
+        "signature": "ClaudePanel:configure(options) -> self"
       },
       {
-        "def": "ClaudeTasks:checkForUpdates(showNoUpdate) -> self",
+        "def": "ClaudePanel:checkForUpdates(showNoUpdate) -> self",
         "desc": "Manually check for updates",
-        "doc": "Manually check for updates\n\nParameters:\n * showNoUpdate - boolean, show notification even when no update available\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Manually check for updates\n\nParameters:\n * showNoUpdate - boolean, show notification even when no update available\n\nReturns:\n * The ClaudePanel object",
         "name": "checkForUpdates",
-        "signature": "ClaudeTasks:checkForUpdates(showNoUpdate) -> self"
+        "signature": "ClaudePanel:checkForUpdates(showNoUpdate) -> self"
       },
       {
-        "def": "ClaudeTasks:bindHotkeys(mapping) -> self",
+        "def": "ClaudePanel:bindHotkeys(mapping) -> self",
         "desc": "Bind hotkeys for the Spoon",
-        "doc": "Bind hotkeys for the Spoon\n\nParameters:\n * mapping - A table with hotkey mappings\n\nReturns:\n * The ClaudeTasks object",
+        "doc": "Bind hotkeys for the Spoon\n\nParameters:\n * mapping - A table with hotkey mappings\n\nReturns:\n * The ClaudePanel object",
         "name": "bindHotkeys",
-        "signature": "ClaudeTasks:bindHotkeys(mapping) -> self"
+        "signature": "ClaudePanel:bindHotkeys(mapping) -> self"
       }
     ],
     "Variable": [
       {
-        "def": "ClaudeTasks.config",
+        "def": "ClaudePanel.config",
         "desc": "Configuration table with the following keys:\n * width - Window width (default: 420)\n * height - Window height (default: 580)\n * margin - Screen margin (default: 20)\n * refreshDebounce - File watcher debounce (default: 0.2)\n * debugMode - Enable debug logging (default: false)\n * checkForUpdates - Check for updates on start (default: true)\n * updateCheckInterval - Update check interval in seconds (default: 86400)",
         "doc": "Configuration table",
         "name": "config",
-        "signature": "ClaudeTasks.config"
+        "signature": "ClaudePanel.config"
       },
       {
-        "def": "ClaudeTasks.defaultHotkeys",
+        "def": "ClaudePanel.defaultHotkeys",
         "desc": "Default hotkey mappings:\n * toggle - {{'alt'}, '.'}\n * status - {{'cmd', 'alt'}, 'T'}",
         "doc": "Default hotkey mappings",
         "name": "defaultHotkeys",
-        "signature": "ClaudeTasks.defaultHotkeys"
+        "signature": "ClaudePanel.defaultHotkeys"
       }
     ],
-    "desc": "Claude Code Task Viewer - A floating WebView-based task viewer for Claude Code tasks",
-    "doc": "Claude Code Task Viewer - A floating WebView-based task viewer for Claude Code tasks\n\nDownload: https://github.com/jongwony/ClaudeTasks.spoon/releases\n\nThis Spoon provides a floating task viewer that displays tasks from ~/.claude/tasks/",
+    "desc": "Claude Code Dashboard - A floating WebView-based dashboard for Claude Code tasks, memory, and search",
+    "doc": "Claude Code Dashboard - A floating WebView-based dashboard for Claude Code tasks, memory, and search\n\nDownload: https://github.com/jongwony/ClaudePanel.spoon/releases\n\nThis Spoon provides a floating dashboard for managing Claude Code tasks, browsing project memory, and searching across sessions",
     "items": [],
-    "name": "ClaudeTasks",
+    "name": "ClaudePanel",
     "stripped_doc": ""
   }
 ]

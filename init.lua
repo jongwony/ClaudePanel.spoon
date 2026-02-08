@@ -1,15 +1,15 @@
--- ClaudeTasks.spoon
--- Hammerspoon Spoon for Claude Code Task viewer
+-- ClaudePanel.spoon
+-- Hammerspoon Spoon for Claude Code dashboard
 -- opt+. 핫키로 플로팅 윈도우에 태스크 목록 표시
 
 local obj = {}
 
 -- Spoon Metadata
-obj.name = "ClaudeTasks"
+obj.name = "ClaudePanel"
 obj.version = "1.8.0"
 obj.author = "jongwony <lastone9182@gmail.com>"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
-obj.homepage = "https://github.com/jongwony/ClaudeTasks.spoon"
+obj.homepage = "https://github.com/jongwony/ClaudePanel.spoon"
 obj.spoonPath = hs.spoons.scriptPath()
 
 -- ============================================================================
@@ -32,6 +32,7 @@ local html = loadModule("html")
 local updater = loadModule("updater")
 local watcher = loadModule("watcher")
 local webviewModule = loadModule("webview")
+local memoryModule = loadModule("memory")
 
 -- ============================================================================
 -- Configuration
@@ -83,11 +84,41 @@ local function saveState()
     stateModule.saveState(obj.state.configPath, obj.state, log)
 end
 
+local memoryCache = { data = {}, sessionId = nil }
+local currentMode = 'session' -- tracks JS mode state for refresh persistence
+
+local function loadMemoryData()
+    local currentProjectHash = nil
+    if obj.state.currentTaskListId then
+        currentProjectHash = memoryModule.findProjectForSession(obj.state.currentTaskListId)
+    end
+    return memoryModule.loadAllMemories(log, tasks.decodeCwdPath, currentProjectHash)
+end
+
+local function getMemoryData()
+    local sessionId = obj.state.currentTaskListId or ''
+    if memoryCache.sessionId ~= sessionId then
+        local ok, data = pcall(loadMemoryData)
+        if not ok then
+            log("Memory data load failed: " .. tostring(data))
+            data = {}
+        end
+        memoryCache.data = data
+        memoryCache.sessionId = sessionId
+    end
+    return memoryCache.data
+end
+
+local function invalidateMemoryCache()
+    memoryCache.sessionId = nil
+end
+
 local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config)
+    local memoryData = getMemoryData()
+    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
@@ -97,7 +128,13 @@ end
 -- ============================================================================
 
 local function actionHandler(action, params)
-    if action == "setSession" then
+    if action == "setMode" then
+        currentMode = params.value or 'session'
+        if currentMode == 'memory' then
+            invalidateMemoryCache()
+            refreshWebView()
+        end
+    elseif action == "setSession" then
         obj:setTaskListId(params.value)
     elseif action == "createTask" then
         obj:createTask(params.subject)
@@ -115,6 +152,12 @@ local function actionHandler(action, params)
         obj:showTaskDetailWindow(params.subject, params.description, params.metadata)
     elseif action == "deleteTask" then
         obj:deleteTask(params.taskId, params.sessionId)
+    elseif action == "showMemoryDetail" then
+        obj:showMemoryDetail(params.projectHash, params.filename)
+    elseif action == "openMemoryInEditor" then
+        obj:openMemoryInEditor(params.projectHash, params.filename)
+    else
+        log("actionHandler: unrecognized action: " .. tostring(action))
     end
 end
 
@@ -139,7 +182,7 @@ function obj:init()
     if not obj.config.keyBindings then
         obj.config.keyBindings = obj.defaultShortcuts
     end
-    log("ClaudeTasks Spoon initialized")
+    log("ClaudePanel Spoon initialized")
     return self
 end
 
@@ -181,6 +224,7 @@ function obj:setTaskListId(id)
     local sessionId = (id ~= "" and id) or nil
     obj.state.currentTaskListId = sessionId
     obj.config.taskListId = sessionId
+    invalidateMemoryCache()
     saveState()
     log("Session changed to: " .. (sessionId or "none"))
 
@@ -347,6 +391,99 @@ function obj:deleteTask(taskId, sessionId)
     hs.alert.show("Task deleted", 1)
     obj:refresh()
     return true
+end
+
+
+function obj:showMemoryDetail(projectHash, filename)
+    if not projectHash or not filename then
+        log("showMemoryDetail: missing projectHash or filename")
+        return self
+    end
+    -- Path traversal prevention
+    if projectHash:match("%.%.") or filename:match("%.%.") or
+       projectHash:match("[/\\]") or filename:match("[/\\]") then
+        log("showMemoryDetail: Invalid characters in path")
+        return self
+    end
+
+    local filepath = memoryModule.getFilePath(projectHash, filename)
+    local content = utils.readFile(filepath)
+    if not content then
+        hs.alert.show("Memory file not found", 2)
+        return self
+    end
+
+    webviewModule.showTaskDetailWindow(filename, content, nil, utils, log)
+    return self
+end
+
+function obj:openMemoryInEditor(projectHash, filename)
+    if not projectHash or not filename then
+        log("openMemoryInEditor: missing projectHash or filename")
+        return self
+    end
+    -- Path traversal prevention
+    if projectHash:match("%.%.") or filename:match("%.%.") or
+       projectHash:match("[/\\]") or filename:match("[/\\]") then
+        log("openMemoryInEditor: Invalid characters in path")
+        return self
+    end
+
+    local filepath = memoryModule.getFilePath(projectHash, filename)
+    if not utils.fileExists(filepath) then
+        hs.alert.show("Memory file not found", 2)
+        return self
+    end
+
+    local editor = os.getenv("VISUAL") or os.getenv("EDITOR") or "vim"
+    local terminalPath = discovery.discoverTerminalApp(obj.config.terminalApp)
+    if not terminalPath then
+        hs.alert.show("No terminal app found", 2)
+        return self
+    end
+
+    local shell = discovery.getShell(obj.config.shell)
+    -- Escape single quotes in filepath for safe shell embedding
+    local safeFilepath = filepath:gsub("'", "'\\''")
+    local shellCmd = string.format("%s '%s'", editor, safeFilepath)
+
+    log("Opening in editor: " .. shellCmd)
+
+    if terminalPath:find("iTerm") then
+        local escapedCmd = shellCmd:gsub("\\", "\\\\"):gsub('"', '\\"')
+        local script = [[
+            tell application "iTerm"
+                activate
+                create window with default profile
+                tell current session of current window
+                    write text "]] .. escapedCmd .. [["
+                end tell
+            end tell
+        ]]
+        local ok, result = hs.osascript.applescript(script)
+        if not ok then
+            log("openMemoryInEditor: AppleScript failed: " .. tostring(result))
+            hs.alert.show("Failed to open editor in iTerm", 2)
+            return self
+        end
+    else
+        local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
+            if exitCode ~= 0 then
+                log("Editor launch error: " .. (stderr or "unknown"))
+            end
+        end, {
+            "-e", shell, "-c", shellCmd
+        })
+        if not task then
+            log("openMemoryInEditor: hs.task.new returned nil for " .. terminalPath)
+            hs.alert.show("Failed to launch terminal", 2)
+            return self
+        end
+        task:start()
+    end
+
+    hs.alert.show("Opening in " .. editor .. "...", 1)
+    return self
 end
 
 function obj:showQuickTaskDialog()
@@ -549,7 +686,7 @@ function obj:start()
         end)
     end
 
-    log("Claude Tasks module started")
+    log("ClaudePanel module started")
     return self
 end
 
@@ -557,7 +694,7 @@ function obj:stop()
     watcher.stopPathWatcher(log)
     webviewModule.cleanup()
     tasks.clearCache()
-    log("Claude Tasks module stopped")
+    log("ClaudePanel module stopped")
     return self
 end
 
@@ -595,7 +732,7 @@ function obj:checkForUpdates(showNoUpdate)
             updater.showUpdateNotification(updateInfo)
         elseif showNoUpdate then
             hs.alert.show(string.format(
-                "ClaudeTasks v%s is up to date",
+                "ClaudePanel v%s is up to date",
                 updateInfo.currentVersion
             ), 2)
         end

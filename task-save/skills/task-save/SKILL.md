@@ -4,7 +4,7 @@ description: |
   This skill should be used when the user asks to "save current task", "save progress",
   "create task from context", "task-save", or wants to capture current work state.
   Usage: /task-save [--cwd <path>] [query]
-  --cwd: Cross-project handoff (records target directory in metadata for ClaudeTasks.spoon).
+  --cwd: Cross-project handoff (records target directory in metadata for ClaudePanel.spoon).
 user-invocable: true
 argument-hint: "[--cwd <path>] [query]"
 ---
@@ -64,7 +64,7 @@ Create a single TaskCreate with:
 - `target_cwd`: resolved absolute path from `--cwd` argument
 - `source_cwd`: current working directory (`$PWD`) at handoff time
 
-When `handoff: true`, ClaudeTasks.spoon renders the task with a distinct handoff launcher that opens a new Claude session in `target_cwd` with a fresh `CLAUDE_CODE_TASK_LIST_ID`.
+When `handoff: true`, ClaudePanel.spoon renders the task with a distinct handoff launcher that opens a new Claude session in `target_cwd` with a fresh `CLAUDE_CODE_TASK_LIST_ID`.
 
 ## Extraction Sources
 

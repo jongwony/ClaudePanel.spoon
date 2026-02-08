@@ -120,6 +120,13 @@ function M.resetForm()
     end
 end
 
+-- Evaluate arbitrary JavaScript in the main webview
+function M.evaluateJavaScript(js)
+    if webview then
+        webview:evaluateJavaScript(js)
+    end
+end
+
 -- Show task detail window
 function M.showTaskDetailWindow(subject, description, metadata, utils, log)
     -- Close existing detail window

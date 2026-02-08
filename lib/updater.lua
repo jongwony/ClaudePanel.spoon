@@ -42,7 +42,7 @@ function M.checkForUpdates(homepage, currentVersion, utils, log, callback)
 
     hs.http.asyncGet(apiUrl, {
         ["Accept"] = "application/vnd.github+json",
-        ["User-Agent"] = "Hammerspoon-ClaudeTasks"
+        ["User-Agent"] = "Hammerspoon-ClaudePanel"
     }, function(status, body, headers)
         if status ~= 200 then
             log("Update check failed: HTTP " .. status)
@@ -86,7 +86,7 @@ function M.showUpdateNotification(updateInfo)
             hs.urlevent.openURL(updateInfo.releaseUrl)
         end
     end, {
-        title = "ClaudeTasks Update Available",
+        title = "ClaudePanel Update Available",
         subTitle = string.format("v%s → %s", updateInfo.currentVersion, updateInfo.latestVersion),
         informativeText = "Click to view release notes",
         hasActionButton = true,
