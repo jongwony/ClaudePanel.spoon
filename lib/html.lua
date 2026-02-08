@@ -1194,8 +1194,8 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 return;
             }
 
-            // Tab cycling (only when not typing in input)
-            if (!isInputFocused && e.key === '/') {
+            // Tab cycling (global, works even in input fields)
+            if (e.key === '/') {
                 e.preventDefault();
                 var modes = ['session', 'search', 'memory'];
                 var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
