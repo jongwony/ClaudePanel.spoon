@@ -74,46 +74,6 @@ function M.getFilePath(projectHash, filename)
     return M.getProjectsDir() .. "/" .. projectHash .. "/memory/" .. filename
 end
 
--- Search memory files for content matching query
--- Returns array of {projectHash, filename} for files containing the query
-function M.searchContent(query, log)
-    if not query or query == "" then return {} end
-    local projectsDir = M.getProjectsDir()
-
-    -- Escape single quotes in query for shell safety
-    local safeQuery = query:gsub("'", "'\\''")
-
-    -- Try rg first, fallback to grep
-    local cmd = string.format(
-        "rg -l --no-heading -i '%s' '%s'/*/memory/*.md 2>/dev/null || grep -rl -i '%s' '%s'/*/memory/*.md 2>/dev/null",
-        safeQuery, projectsDir, safeQuery, projectsDir
-    )
-
-    local handle = io.popen(cmd)
-    if not handle then return {} end
-
-    local results = {}
-    local seen = {}
-    for line in handle:lines() do
-        -- Parse path: .../projects/{hash}/memory/{filename}
-        local hash, filename = line:match("/projects/([^/]+)/memory/([^/]+)$")
-        if hash and filename then
-            local key = hash .. "/" .. filename
-            if not seen[key] then
-                seen[key] = true
-                table.insert(results, { projectHash = hash, filename = filename })
-            end
-        end
-    end
-    handle:close()
-
-    if log then
-        log("Memory search for '" .. query .. "': " .. #results .. " matches")
-    end
-
-    return results
-end
-
 -- Load memory file metadata for a specific project hash directory
 -- Returns array of {name, modified} (content loaded on-demand via getFilePath + readFile)
 function M.loadMemoryFiles(projectHash, utils)

@@ -129,7 +129,7 @@ See README.md for complete API documentation. Key methods:
 - `obj:refresh()`, `obj:setTaskListId()`, `obj:createTask()`, `obj:quickTaskUpdate()`
 - `obj:launchClaudeWithTaskList()`, `obj:launchClaudeWithCwd()`, `obj:launchClaudeWithSession()`, `obj:launchClaudeHandoff()`
 - `obj:configure()`, `obj:checkForUpdates()`, `obj:status()`, `obj:bindHotkeys()`, `obj:bindShortcuts()`
-- `obj:showMemoryDetail()`, `obj:openMemoryInEditor()`, `obj:searchMemoryContent()`
+- `obj:showMemoryDetail()`, `obj:openMemoryInEditor()`
 
 ### Launch Methods
 

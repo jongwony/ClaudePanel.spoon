@@ -156,8 +156,6 @@ local function actionHandler(action, params)
         obj:showMemoryDetail(params.projectHash, params.filename)
     elseif action == "openMemoryInEditor" then
         obj:openMemoryInEditor(params.projectHash, params.filename)
-    elseif action == "searchMemory" then
-        obj:searchMemoryContent(params.query)
     else
         log("actionHandler: unrecognized action: " .. tostring(action))
     end
@@ -395,22 +393,6 @@ function obj:deleteTask(taskId, sessionId)
     return true
 end
 
-function obj:searchMemoryContent(query)
-    if not query or query == "" then
-        webviewModule.evaluateJavaScript("handleMemorySearchResults([])")
-        return self
-    end
-
-    local results = memoryModule.searchContent(query, log)
-    local ok, resultsJson = pcall(hs.json.encode, results)
-    if not ok or not resultsJson then
-        log("searchMemoryContent: JSON encode failed: " .. tostring(resultsJson))
-        webviewModule.evaluateJavaScript("handleMemorySearchResults([])")
-        return self
-    end
-    webviewModule.evaluateJavaScript("handleMemorySearchResults(" .. resultsJson .. ")")
-    return self
-end
 
 function obj:showMemoryDetail(projectHash, filename)
     if not projectHash or not filename then

@@ -1031,18 +1031,19 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             });
         }
 
-        var contentSearchResults = null; // null = no content search active
-
         function filterMemoryFiles(query) {
             var memoryList = document.getElementById('memoryList');
             if (!memoryList) return;
             var normalizedQuery = query.toLowerCase().trim();
             var projects = memoryList.querySelectorAll('.memory-project');
             projects.forEach(function(project) {
+                var header = project.querySelector('.memory-project-header');
+                var projectText = header ? header.textContent.toLowerCase() : '';
+                var projectMatch = normalizedQuery && projectText.includes(normalizedQuery);
                 var files = project.querySelectorAll('.memory-file');
                 var visibleInProject = 0;
                 files.forEach(function(file) {
-                    if (!normalizedQuery) {
+                    if (!normalizedQuery || projectMatch) {
                         file.classList.remove('hidden');
                         visibleInProject++;
                         return;
@@ -1051,20 +1052,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                     var nameText = name ? name.textContent.toLowerCase() : '';
                     var pathEl = file.querySelector('.memory-file-path');
                     var pathText = pathEl ? pathEl.textContent.toLowerCase() : '';
-                    var nameMatch = nameText.includes(normalizedQuery) || pathText.includes(normalizedQuery);
-
-                    // Check content search results if available
-                    var contentMatch = false;
-                    if (contentSearchResults) {
-                        var fileProjectHash = file.dataset.projectHash;
-                        var fileFilename = file.dataset.filename;
-                        contentMatch = contentSearchResults.some(function(r) {
-                            return r.projectHash === fileProjectHash &&
-                                   r.filename.toLowerCase() === (fileFilename || '').toLowerCase();
-                        });
-                    }
-
-                    if (nameMatch || contentMatch) {
+                    if (nameText.includes(normalizedQuery) || pathText.includes(normalizedQuery)) {
                         file.classList.remove('hidden');
                         visibleInProject++;
                     } else {
@@ -1076,32 +1064,8 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             memoryFocusedIndex = -1;
         }
 
-        // Called from Lua with content search results
-        function handleMemorySearchResults(results) {
-            contentSearchResults = results && results.length > 0 ? results : null;
-            var memSearch = document.getElementById('memorySearchInput');
-            if (memSearch && memSearch.value.trim()) {
-                filterMemoryFiles(memSearch.value);
-            }
-        }
-
         function onMemorySearchInput(input) {
-            if (searchDebounceTimer) {
-                clearTimeout(searchDebounceTimer);
-            }
-            var query = input.value.trim();
-            searchDebounceTimer = setTimeout(function() {
-                // Reset content results before new search
-                contentSearchResults = null;
-                filterMemoryFiles(input.value);
-                // Trigger server-side content search for non-trivial queries
-                if (query.length >= 2) {
-                    window.webkit.messageHandlers.taskBridge.postMessage({
-                        action: 'searchMemory',
-                        query: query
-                    });
-                }
-            }, 300);
+            filterMemoryFiles(input.value);
         }
 
         function clearSearch() {
@@ -1327,7 +1291,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             <div class="input-container hidden" id="memorySearchContainer">
                 <span class="search-icon">🧠</span>
                 <input type="text" class="search-input" id="memorySearchInput"
-                       placeholder="Search memory files..."
+                       placeholder="Filter by filename or project path..."
                        oninput="onMemorySearchInput(this)"
                        onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
             </div>
