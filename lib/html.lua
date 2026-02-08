@@ -762,9 +762,9 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         }
 
         // Set input mode
-        function setMode(mode) {
+        // Apply mode UI state without notifying Lua (used for initialization)
+        function applyMode(mode) {
             currentMode = mode;
-            window.webkit.messageHandlers.taskBridge.postMessage({action: 'setMode', value: mode});
             var sessionContainer = document.getElementById('sessionContainer');
             var searchContainer = document.getElementById('searchContainer');
             var memorySearchContainer = document.getElementById('memorySearchContainer');
@@ -807,6 +807,12 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 clearSearch();
                 document.getElementById('sessionInput').focus();
             }
+        }
+
+        // Switch mode and notify Lua (used for user-initiated tab switches)
+        function setMode(mode) {
+            applyMode(mode);
+            window.webkit.messageHandlers.taskBridge.postMessage({action: 'setMode', value: mode});
         }
 
         function toggleForm() {
@@ -1135,7 +1141,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         // Auto-focus first task on load
         document.addEventListener('DOMContentLoaded', function() {
             if (currentMode !== 'session') {
-                setMode(currentMode);
+                applyMode(currentMode);
             }
             const tasks = getVisibleTasks();
             if (currentMode === 'session' && tasks.length > 0) {
