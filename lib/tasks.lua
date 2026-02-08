@@ -14,14 +14,14 @@ local function encodePath(path)
     local encoded = path:gsub("/%.", "--")
     -- Then handle remaining / → -
     encoded = encoded:gsub("/", "-")
-    -- Finally handle remaining . → - (dots in filenames like ClaudeTasks.spoon)
+    -- Finally handle remaining . → - (dots in filenames like ClaudePanel.spoon)
     encoded = encoded:gsub("%.", "-")
     return encoded
 end
 
 -- Decode CWD path from encoded directory name
 -- Claude encodes paths: / → -, . → -, /. → --
--- Problem: hyphens in dir names (e.g. aqueduct-deploy) and dots (e.g. ClaudeTasks.spoon) are ambiguous.
+-- Problem: hyphens in dir names (e.g. aqueduct-deploy) and dots (e.g. ClaudePanel.spoon) are ambiguous.
 -- Solution: walk the filesystem and verify by re-encoding.
 function M.decodeCwdPath(encodedDir)
     -- First handle '--' (encoded /.) by replacing with placeholder

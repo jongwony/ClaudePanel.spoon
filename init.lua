@@ -1,15 +1,15 @@
--- ClaudeTasks.spoon
--- Hammerspoon Spoon for Claude Code Task viewer
+-- ClaudePanel.spoon
+-- Hammerspoon Spoon for Claude Code dashboard
 -- opt+. 핫키로 플로팅 윈도우에 태스크 목록 표시
 
 local obj = {}
 
 -- Spoon Metadata
-obj.name = "ClaudeTasks"
+obj.name = "ClaudePanel"
 obj.version = "1.8.0"
 obj.author = "jongwony <lastone9182@gmail.com>"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
-obj.homepage = "https://github.com/jongwony/ClaudeTasks.spoon"
+obj.homepage = "https://github.com/jongwony/ClaudePanel.spoon"
 obj.spoonPath = hs.spoons.scriptPath()
 
 -- ============================================================================
@@ -159,7 +159,7 @@ function obj:init()
     if not obj.config.keyBindings then
         obj.config.keyBindings = obj.defaultShortcuts
     end
-    log("ClaudeTasks Spoon initialized")
+    log("ClaudePanel Spoon initialized")
     return self
 end
 
@@ -710,7 +710,7 @@ function obj:checkForUpdates(showNoUpdate)
             updater.showUpdateNotification(updateInfo)
         elseif showNoUpdate then
             hs.alert.show(string.format(
-                "ClaudeTasks v%s is up to date",
+                "ClaudePanel v%s is up to date",
                 updateInfo.currentVersion
             ), 2)
         end

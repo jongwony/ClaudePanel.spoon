@@ -1,4 +1,4 @@
-# ClaudeTasks.spoon
+# ClaudePanel.spoon
 
 Hammerspoon Spoon for viewing Claude Code tasks in a floating window.
 
@@ -25,22 +25,22 @@ Hammerspoon Spoon for viewing Claude Code tasks in a floating window.
 ### Option 1: Clone and Symlink (Recommended for development)
 
 ```bash
-git clone https://github.com/jongwony/ClaudeTasks.spoon.git
-ln -sf $(pwd)/ClaudeTasks.spoon ~/.hammerspoon/Spoons/ClaudeTasks.spoon
+git clone https://github.com/jongwony/ClaudePanel.spoon.git
+ln -sf $(pwd)/ClaudePanel.spoon ~/.hammerspoon/Spoons/ClaudePanel.spoon
 ```
 
 ### Option 2: Direct Download
 
-Download and extract to `~/.hammerspoon/Spoons/ClaudeTasks.spoon/`
+Download and extract to `~/.hammerspoon/Spoons/ClaudePanel.spoon/`
 
 ## Usage
 
 Add to your `~/.hammerspoon/init.lua`:
 
 ```lua
-hs.loadSpoon("ClaudeTasks")
-spoon.ClaudeTasks:bindHotkeys(spoon.ClaudeTasks.defaultHotkeys)
-spoon.ClaudeTasks:start()
+hs.loadSpoon("ClaudePanel")
+spoon.ClaudePanel:bindHotkeys(spoon.ClaudePanel.defaultHotkeys)
+spoon.ClaudePanel:start()
 ```
 
 ### Default Hotkeys
@@ -70,8 +70,8 @@ All keyboard shortcuts can be customized via `bindShortcuts()`.
 ### Custom Configuration
 
 ```lua
-hs.loadSpoon("ClaudeTasks")
-spoon.ClaudeTasks:configure({
+hs.loadSpoon("ClaudePanel")
+spoon.ClaudePanel:configure({
     width = 500,
     height = 700,
     margin = 30,
@@ -81,19 +81,19 @@ spoon.ClaudeTasks:configure({
     terminalApp = "/Applications/iTerm.app/Contents/MacOS/iTerm2",
     shell = "/bin/bash",
 })
-spoon.ClaudeTasks:bindHotkeys({
+spoon.ClaudePanel:bindHotkeys({
     toggle = {{"cmd", "shift"}, "t"},
     status = {{"cmd", "alt"}, "t"}
 })
 -- You can customize all in-app keyboard shortcuts
-spoon.ClaudeTasks:bindShortcuts({
+spoon.ClaudePanel:bindShortcuts({
     navigateDown = {modifiers = {}, keys = {'j', 'ㅓ', 'ArrowDown'}},
     navigateUp = {modifiers = {}, keys = {'k', 'ㅏ', 'ArrowUp'}},
     deleteTask = {modifiers = {'cmd'}, keys = {'Backspace'}},
     openTask = {modifiers = {}, keys = {' '}},
     launchTask = {modifiers = {}, keys = {'Enter'}},
 })
-spoon.ClaudeTasks:start()
+spoon.ClaudePanel:start()
 ```
 
 ## API

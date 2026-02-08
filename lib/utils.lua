@@ -1,12 +1,12 @@
 -- lib/utils.lua
--- Pure utility functions for ClaudeTasks
+-- Pure utility functions for ClaudePanel
 
 local M = {}
 
 -- Debug logging
 function M.log(debugMode, message)
     if debugMode then
-        print("[ClaudeTasks] " .. message)
+        print("[ClaudePanel] " .. message)
     end
 end
 

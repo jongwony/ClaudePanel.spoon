@@ -73,14 +73,14 @@ test("Path with dot directory: /Users/choi/.claude", function()
     assertEqual(result, "/Users/choi/.claude")
 end)
 
-test("Path with dot in dirname: ClaudeTasks.spoon", function()
+test("Path with dot in dirname: ClaudePanel.spoon", function()
     setMockFs({
         "/Users", "/Users/choi", "/Users/choi/Downloads",
         "/Users/choi/Downloads/github", "/Users/choi/Downloads/github/private",
-        "/Users/choi/Downloads/github/private/ClaudeTasks.spoon"
+        "/Users/choi/Downloads/github/private/ClaudePanel.spoon"
     })
-    local result = tasks.decodeCwdPath("-Users-choi-Downloads-github-private-ClaudeTasks-spoon")
-    assertEqual(result, "/Users/choi/Downloads/github/private/ClaudeTasks.spoon")
+    local result = tasks.decodeCwdPath("-Users-choi-Downloads-github-private-ClaudePanel-spoon")
+    assertEqual(result, "/Users/choi/Downloads/github/private/ClaudePanel.spoon")
 end)
 
 test("Path with hyphen in dirname: my-project", function()

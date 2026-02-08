@@ -4,14 +4,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-ClaudeTasks.spoon is a Hammerspoon Spoon that provides a floating WebView-based task viewer for Claude Code tasks stored in `~/.claude/tasks/`.
+ClaudePanel.spoon is a Hammerspoon Spoon that provides a floating WebView-based dashboard for Claude Code tasks, project memory, and search stored in `~/.claude/`.
 
 ## Architecture
 
 Modular Spoon architecture with coordinator pattern:
 
 ```
-ClaudeTasks.spoon/
+ClaudePanel.spoon/
 ├── init.lua              # Thin coordinator, routes WebView actions to modules
 ├── lib/
 │   ├── utils.lua         # Pure utilities: log, file ops, JSON, HTML escape
@@ -81,7 +81,7 @@ Tasks are stored in `~/.claude/tasks/{sessionId}/*.json`. Each session directory
 
 Claude Code encodes working directory paths in session IDs:
 - `/` → `-` (path separator)
-- `.` → `-` (dot in filenames, e.g., `ClaudeTasks.spoon` → `ClaudeTasks-spoon`)
+- `.` → `-` (dot in filenames, e.g., `ClaudePanel.spoon` → `ClaudePanel-spoon`)
 - `/.` → `--` (dot directories, e.g., `/.claude` → `--claude`)
 
 The `tasks.decodeCwdPath()` function resolves ambiguity by backtracking through all interpretations of `-` (as `/`, `.`, or literal `-`) and validating against the filesystem. This is critical for the "Launch Claude" feature.
@@ -95,11 +95,11 @@ lua tests/test_tasks.lua
 
 **Integration testing**: Reload in Hammerspoon console:
 ```lua
-hs.loadSpoon("ClaudeTasks")
-spoon.ClaudeTasks:start()
+hs.loadSpoon("ClaudePanel")
+spoon.ClaudePanel:start()
 ```
 
-**Debug mode**: Enable logging via `spoon.ClaudeTasks:configure({debugMode = true})`
+**Debug mode**: Enable logging via `spoon.ClaudePanel:configure({debugMode = true})`
 
 ## Key Conventions
 
@@ -115,8 +115,8 @@ spoon.ClaudeTasks:start()
 Built-in update checker uses GitHub API to check for new releases:
 
 - **Auto-check**: Runs on `start()` with 24-hour interval (configurable)
-- **Manual check**: `spoon.ClaudeTasks:checkForUpdates(true)`
-- **Disable**: `spoon.ClaudeTasks:configure({checkForUpdates = false})`
+- **Manual check**: `spoon.ClaudePanel:checkForUpdates(true)`
+- **Disable**: `spoon.ClaudePanel:configure({checkForUpdates = false})`
 
 SpoonInstall compatible via `docs.json` metadata file.
 
@@ -199,7 +199,7 @@ obj.defaultShortcuts = {
 
 **Usage**:
 ```lua
-spoon.ClaudeTasks:bindShortcuts({
+spoon.ClaudePanel:bindShortcuts({
     deleteTask = {modifiers = {'cmd', 'shift'}, keys = {'Backspace', 'Delete'}},
 })
 ```
