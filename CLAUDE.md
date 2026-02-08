@@ -20,6 +20,7 @@ ClaudePanel.spoon/
 │   ├── tasks.lua         # Task loading and CWD extraction
 │   ├── html.lua          # HTML/CSS/JS generation
 │   ├── webview.lua       # WebView management (main, detail, quickTask)
+│   ├── memory.lua        # Memory file discovery, search, and loading
 │   ├── watcher.lua       # File system watcher with debounce
 │   └── updater.lua       # GitHub release update checker
 ├── state.json
@@ -64,14 +65,15 @@ WebView communicates with Lua via `hs.webview.usercontent`. JavaScript calls `we
 
 ### Mode System (html.lua)
 
-UI has two input modes managed by `currentMode` variable:
+UI has three modes managed by `currentMode` variable:
 - `'session'` - Session ID input (default)
 - `'search'` - Task filtering
+- `'memory'` - Memory file browsing
 
 Key functions:
-- `setMode(mode)` - Switch mode, release task focus, focus input field
+- `setMode(mode)` - Switch mode, reset focus state, focus appropriate input field
 - `releaseToNavigation()` - Blur input, clear task focus for j/k navigation
-- `toggleMode()` - Toggle between modes (for button click)
+- `/` key cycles through modes: session → search → memory → session
 
 ### Task File Structure
 
@@ -127,6 +129,7 @@ See README.md for complete API documentation. Key methods:
 - `obj:refresh()`, `obj:setTaskListId()`, `obj:createTask()`, `obj:quickTaskUpdate()`
 - `obj:launchClaudeWithTaskList()`, `obj:launchClaudeWithCwd()`, `obj:launchClaudeWithSession()`, `obj:launchClaudeHandoff()`
 - `obj:configure()`, `obj:checkForUpdates()`, `obj:status()`, `obj:bindHotkeys()`, `obj:bindShortcuts()`
+- `obj:showMemoryDetail()`, `obj:openMemoryInEditor()`, `obj:searchMemoryContent()`
 
 ### Launch Methods
 

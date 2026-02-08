@@ -84,6 +84,8 @@ local function saveState()
     stateModule.saveState(obj.state.configPath, obj.state, log)
 end
 
+local memoryCache = { data = {}, sessionId = nil }
+
 local function loadMemoryData()
     local currentProjectHash = nil
     if obj.state.currentTaskListId then
@@ -92,15 +94,29 @@ local function loadMemoryData()
     return memoryModule.loadAllMemories(utils, log, tasks.decodeCwdPath, currentProjectHash)
 end
 
+local function getMemoryData()
+    local sessionId = obj.state.currentTaskListId or ''
+    if memoryCache.sessionId ~= sessionId then
+        local ok, data = pcall(loadMemoryData)
+        if not ok then
+            log("Memory data load failed: " .. tostring(data))
+            data = {}
+        end
+        memoryCache.data = data
+        memoryCache.sessionId = sessionId
+    end
+    return memoryCache.data
+end
+
+local function invalidateMemoryCache()
+    memoryCache.sessionId = nil
+end
+
 local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
-    local ok, memoryData = pcall(loadMemoryData)
-    if not ok then
-        log("Memory data load failed: " .. tostring(memoryData))
-        memoryData = {}
-    end
+    local memoryData = getMemoryData()
     local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
@@ -135,6 +151,8 @@ local function actionHandler(action, params)
         obj:openMemoryInEditor(params.projectHash, params.filename)
     elseif action == "searchMemory" then
         obj:searchMemoryContent(params.query)
+    else
+        log("actionHandler: unrecognized action: " .. tostring(action))
     end
 end
 
@@ -201,6 +219,7 @@ function obj:setTaskListId(id)
     local sessionId = (id ~= "" and id) or nil
     obj.state.currentTaskListId = sessionId
     obj.config.taskListId = sessionId
+    invalidateMemoryCache()
     saveState()
     log("Session changed to: " .. (sessionId or "none"))
 
@@ -375,9 +394,13 @@ function obj:searchMemoryContent(query)
         return self
     end
 
-    -- Run search asynchronously to avoid blocking UI
     local results = memoryModule.searchContent(query, log)
-    local resultsJson = hs.json.encode(results)
+    local ok, resultsJson = pcall(hs.json.encode, results)
+    if not ok or not resultsJson then
+        log("searchMemoryContent: JSON encode failed: " .. tostring(resultsJson))
+        webviewModule.evaluateJavaScript("handleMemorySearchResults([])")
+        return self
+    end
     webviewModule.evaluateJavaScript("handleMemorySearchResults(" .. resultsJson .. ")")
     return self
 end
@@ -448,7 +471,12 @@ function obj:openMemoryInEditor(projectHash, filename)
                 end tell
             end tell
         ]]
-        hs.osascript.applescript(script)
+        local ok, result = hs.osascript.applescript(script)
+        if not ok then
+            log("openMemoryInEditor: AppleScript failed: " .. tostring(result))
+            hs.alert.show("Failed to open editor in iTerm", 2)
+            return self
+        end
     else
         local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
             if exitCode ~= 0 then
@@ -457,6 +485,11 @@ function obj:openMemoryInEditor(projectHash, filename)
         end, {
             "-e", shell, "-c", shellCmd
         })
+        if not task then
+            log("openMemoryInEditor: hs.task.new returned nil for " .. terminalPath)
+            hs.alert.show("Failed to launch terminal", 2)
+            return self
+        end
         task:start()
     end
 
@@ -664,7 +697,7 @@ function obj:start()
         end)
     end
 
-    log("Claude Tasks module started")
+    log("ClaudePanel module started")
     return self
 end
 
@@ -672,7 +705,7 @@ function obj:stop()
     watcher.stopPathWatcher(log)
     webviewModule.cleanup()
     tasks.clearCache()
-    log("Claude Tasks module stopped")
+    log("ClaudePanel module stopped")
     return self
 end
 

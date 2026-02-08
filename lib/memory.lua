@@ -65,7 +65,12 @@ function M.findProjectForSession(sessionId, utils)
 end
 
 -- Get full filesystem path for a memory file
+-- Returns nil if path components contain traversal characters
 function M.getFilePath(projectHash, filename)
+    if projectHash:match("%.%.") or filename:match("%.%.") or
+       projectHash:match("[/\\]") or filename:match("[/\\]") then
+        return nil
+    end
     return M.getProjectsDir() .. "/" .. projectHash .. "/memory/" .. filename
 end
 

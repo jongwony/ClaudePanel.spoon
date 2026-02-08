@@ -976,20 +976,6 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             }
         }
 
-        // Toggle between modes (for button click)
-        function toggleMode() {
-            if (currentMode === 'memory') {
-                setMode('session');
-            } else {
-                setMode(currentMode === 'search' ? 'session' : 'search');
-            }
-        }
-
-        // Toggle memory mode
-        function toggleMemoryMode() {
-            setMode(currentMode === 'memory' ? 'session' : 'memory');
-        }
-
         // Memory navigation
         function getVisibleMemoryFiles() {
             var memoryList = document.getElementById('memoryList');
@@ -1069,10 +1055,11 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                     // Check content search results if available
                     var contentMatch = false;
                     if (contentSearchResults) {
-                        var fileHash = file.closest('.memory-project');
-                        var header = fileHash ? fileHash.querySelector('.memory-project-header') : null;
+                        var fileProjectHash = file.dataset.projectHash;
+                        var fileFilename = file.dataset.filename;
                         contentMatch = contentSearchResults.some(function(r) {
-                            return nameText.includes(r.filename.toLowerCase());
+                            return r.projectHash === fileProjectHash &&
+                                   r.filename.toLowerCase() === (fileFilename || '').toLowerCase();
                         });
                     }
 
