@@ -1188,8 +1188,8 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 return;
             }
 
-            // Tab cycling (global)
-            if (e.key === '/') {
+            // Tab cycling (only when not typing in input)
+            if (!isInputFocused && e.key === '/') {
                 e.preventDefault();
                 var modes = ['session', 'search', 'memory'];
                 var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
