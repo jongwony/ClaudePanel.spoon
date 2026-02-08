@@ -32,6 +32,7 @@ local html = loadModule("html")
 local updater = loadModule("updater")
 local watcher = loadModule("watcher")
 local webviewModule = loadModule("webview")
+local memoryModule = loadModule("memory")
 
 -- ============================================================================
 -- Configuration
@@ -83,11 +84,24 @@ local function saveState()
     stateModule.saveState(obj.state.configPath, obj.state, log)
 end
 
+local function loadMemoryData()
+    local currentProjectHash = nil
+    if obj.state.currentTaskListId then
+        currentProjectHash = memoryModule.findProjectForSession(obj.state.currentTaskListId, utils)
+    end
+    return memoryModule.loadAllMemories(utils, log, tasks.decodeCwdPath, currentProjectHash)
+end
+
 local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config)
+    local ok, memoryData = pcall(loadMemoryData)
+    if not ok then
+        log("Memory data load failed: " .. tostring(memoryData))
+        memoryData = {}
+    end
+    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
@@ -115,6 +129,12 @@ local function actionHandler(action, params)
         obj:showTaskDetailWindow(params.subject, params.description, params.metadata)
     elseif action == "deleteTask" then
         obj:deleteTask(params.taskId, params.sessionId)
+    elseif action == "showMemoryDetail" then
+        obj:showMemoryDetail(params.projectHash, params.filename)
+    elseif action == "openMemoryInEditor" then
+        obj:openMemoryInEditor(params.projectHash, params.filename)
+    elseif action == "searchMemory" then
+        obj:searchMemoryContent(params.query)
     end
 end
 
@@ -347,6 +367,101 @@ function obj:deleteTask(taskId, sessionId)
     hs.alert.show("Task deleted", 1)
     obj:refresh()
     return true
+end
+
+function obj:searchMemoryContent(query)
+    if not query or query == "" then
+        webviewModule.evaluateJavaScript("handleMemorySearchResults([])")
+        return self
+    end
+
+    -- Run search asynchronously to avoid blocking UI
+    local results = memoryModule.searchContent(query, log)
+    local resultsJson = hs.json.encode(results)
+    webviewModule.evaluateJavaScript("handleMemorySearchResults(" .. resultsJson .. ")")
+    return self
+end
+
+function obj:showMemoryDetail(projectHash, filename)
+    if not projectHash or not filename then
+        log("showMemoryDetail: missing projectHash or filename")
+        return self
+    end
+    -- Path traversal prevention
+    if projectHash:match("%.%.") or filename:match("%.%.") or
+       projectHash:match("[/\\]") or filename:match("[/\\]") then
+        log("showMemoryDetail: Invalid characters in path")
+        return self
+    end
+
+    local filepath = memoryModule.getFilePath(projectHash, filename)
+    local content = utils.readFile(filepath)
+    if not content then
+        hs.alert.show("Memory file not found", 2)
+        return self
+    end
+
+    webviewModule.showTaskDetailWindow(filename, content, nil, utils, log)
+    return self
+end
+
+function obj:openMemoryInEditor(projectHash, filename)
+    if not projectHash or not filename then
+        log("openMemoryInEditor: missing projectHash or filename")
+        return self
+    end
+    -- Path traversal prevention
+    if projectHash:match("%.%.") or filename:match("%.%.") or
+       projectHash:match("[/\\]") or filename:match("[/\\]") then
+        log("openMemoryInEditor: Invalid characters in path")
+        return self
+    end
+
+    local filepath = memoryModule.getFilePath(projectHash, filename)
+    if not utils.fileExists(filepath) then
+        hs.alert.show("Memory file not found", 2)
+        return self
+    end
+
+    local editor = os.getenv("VISUAL") or os.getenv("EDITOR") or "vim"
+    local terminalPath = discovery.discoverTerminalApp(obj.config.terminalApp)
+    if not terminalPath then
+        hs.alert.show("No terminal app found", 2)
+        return self
+    end
+
+    local shell = discovery.getShell(obj.config.shell)
+    -- Escape single quotes in filepath for safe shell embedding
+    local safeFilepath = filepath:gsub("'", "'\\''")
+    local shellCmd = string.format("%s '%s'", editor, safeFilepath)
+
+    log("Opening in editor: " .. shellCmd)
+
+    if terminalPath:find("iTerm") then
+        local escapedCmd = shellCmd:gsub("\\", "\\\\"):gsub('"', '\\"')
+        local script = [[
+            tell application "iTerm"
+                activate
+                create window with default profile
+                tell current session of current window
+                    write text "]] .. escapedCmd .. [["
+                end tell
+            end tell
+        ]]
+        hs.osascript.applescript(script)
+    else
+        local task = hs.task.new(terminalPath, function(exitCode, stdout, stderr)
+            if exitCode ~= 0 then
+                log("Editor launch error: " .. (stderr or "unknown"))
+            end
+        end, {
+            "-e", shell, "-c", shellCmd
+        })
+        task:start()
+    end
+
+    hs.alert.show("Opening in " .. editor .. "...", 1)
+    return self
 end
 
 function obj:showQuickTaskDialog()

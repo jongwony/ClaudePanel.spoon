@@ -167,8 +167,7 @@ WebView embedded shortcuts (in `html.lua`):
 - `Cmd+Backspace` - Delete task (with confirmation)
 
 **Mode switching (global, works even in input fields)**:
-- `/` - Search mode (filter tasks by subject/description)
-- `=` - Session input mode
+- `/` - Cycle tabs (Tasks → Search → Memory)
 - `Escape` / `Ctrl+[` - Return to navigation mode
 
 **Other**:
