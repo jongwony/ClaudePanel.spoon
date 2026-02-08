@@ -76,7 +76,7 @@ function M.generateCwdDisplay(task, utils)
 end
 
 -- Generate full HTML for task viewer
-function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData)
+function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData, currentMode)
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
@@ -716,7 +716,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         let isCreating = false;
         let formCollapsed = true;
         let focusedIndex = -1;
-        let currentMode = 'session'; // 'session' | 'search' | 'memory'
+        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'memory'
         let searchDebounceTimer = null;
         let helpVisible = false;
         let memoryFocusedIndex = -1;
@@ -764,6 +764,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         // Set input mode
         function setMode(mode) {
             currentMode = mode;
+            window.webkit.messageHandlers.taskBridge.postMessage({action: 'setMode', value: mode});
             var sessionContainer = document.getElementById('sessionContainer');
             var searchContainer = document.getElementById('searchContainer');
             var memorySearchContainer = document.getElementById('memorySearchContainer');
@@ -1169,8 +1170,11 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
 
         // Auto-focus first task on load
         document.addEventListener('DOMContentLoaded', function() {
+            if (currentMode !== 'session') {
+                setMode(currentMode);
+            }
             const tasks = getVisibleTasks();
-            if (tasks.length > 0) {
+            if (currentMode === 'session' && tasks.length > 0) {
                 updateFocus(0);
             }
         });

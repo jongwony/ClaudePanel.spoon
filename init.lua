@@ -85,6 +85,7 @@ local function saveState()
 end
 
 local memoryCache = { data = {}, sessionId = nil }
+local currentMode = 'session' -- tracks JS mode state for refresh persistence
 
 local function loadMemoryData()
     local currentProjectHash = nil
@@ -117,7 +118,7 @@ local function refreshWebView()
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
     local memoryData = getMemoryData()
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData)
+    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
@@ -127,7 +128,9 @@ end
 -- ============================================================================
 
 local function actionHandler(action, params)
-    if action == "setSession" then
+    if action == "setMode" then
+        currentMode = params.value or 'session'
+    elseif action == "setSession" then
         obj:setTaskListId(params.value)
     elseif action == "createTask" then
         obj:createTask(params.subject)
