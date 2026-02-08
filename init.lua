@@ -90,9 +90,9 @@ local currentMode = 'session' -- tracks JS mode state for refresh persistence
 local function loadMemoryData()
     local currentProjectHash = nil
     if obj.state.currentTaskListId then
-        currentProjectHash = memoryModule.findProjectForSession(obj.state.currentTaskListId, utils)
+        currentProjectHash = memoryModule.findProjectForSession(obj.state.currentTaskListId)
     end
-    return memoryModule.loadAllMemories(utils, log, tasks.decodeCwdPath, currentProjectHash)
+    return memoryModule.loadAllMemories(log, tasks.decodeCwdPath, currentProjectHash)
 end
 
 local function getMemoryData()

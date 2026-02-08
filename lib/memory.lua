@@ -1,28 +1,48 @@
 -- lib/memory.lua
 -- Memory file discovery and loading
+-- Uses hs.fs directly to avoid subprocess spawning via io.popen
 
 local M = {}
 
+local projectsDir = os.getenv("HOME") .. "/.claude/projects"
+
 -- Get the projects directory path
 function M.getProjectsDir()
-    return os.getenv("HOME") .. "/.claude/projects"
+    return projectsDir
+end
+
+-- List directory entries using hs.fs.dir (no subprocess)
+local function listDir(path)
+    local items = {}
+    local iter, dir = hs.fs.dir(path)
+    if not iter then return items end
+    for entry in iter, dir do
+        if entry ~= "." and entry ~= ".." then
+            table.insert(items, entry)
+        end
+    end
+    return items
+end
+
+-- Check if path exists using hs.fs.attributes (no subprocess)
+local function pathExists(path)
+    return hs.fs.attributes(path, "mode") ~= nil
 end
 
 -- List all projects with decoded paths
 -- decodeCwdPath: function from tasks module to decode encoded directory names
-function M.listProjects(utils, decodeCwdPath, log)
-    local projectsDir = M.getProjectsDir()
-    if not utils.fileExists(projectsDir) then
+function M.listProjects(decodeCwdPath, log)
+    if not pathExists(projectsDir) then
         return {}
     end
 
     local projects = {}
-    local dirs = utils.listDir(projectsDir)
+    local dirs = listDir(projectsDir)
 
     for _, encodedDir in ipairs(dirs) do
         local memoryDir = projectsDir .. "/" .. encodedDir .. "/memory"
         -- Only include projects that have a memory/ subdirectory
-        if utils.fileExists(memoryDir) then
+        if pathExists(memoryDir) then
             local decodedPath = nil
             if decodeCwdPath then
                 local ok, result = pcall(decodeCwdPath, encodedDir)
@@ -49,15 +69,14 @@ end
 
 -- Find which project hash contains a given session ID
 -- Returns the project hash string, or nil if not found
-function M.findProjectForSession(sessionId, utils)
+function M.findProjectForSession(sessionId)
     if not sessionId or sessionId == "" then return nil end
-    local projectsDir = M.getProjectsDir()
-    if not utils.fileExists(projectsDir) then return nil end
+    if not pathExists(projectsDir) then return nil end
 
-    local dirs = utils.listDir(projectsDir)
+    local dirs = listDir(projectsDir)
     for _, encodedDir in ipairs(dirs) do
         local sessionFile = projectsDir .. "/" .. encodedDir .. "/" .. sessionId .. ".jsonl"
-        if utils.fileExists(sessionFile) then
+        if pathExists(sessionFile) then
             return encodedDir
         end
     end
@@ -71,19 +90,19 @@ function M.getFilePath(projectHash, filename)
        projectHash:match("[/\\]") or filename:match("[/\\]") then
         return nil
     end
-    return M.getProjectsDir() .. "/" .. projectHash .. "/memory/" .. filename
+    return projectsDir .. "/" .. projectHash .. "/memory/" .. filename
 end
 
 -- Load memory file metadata for a specific project hash directory
--- Returns array of {name, modified} (content loaded on-demand via getFilePath + readFile)
-function M.loadMemoryFiles(projectHash, utils)
-    local memoryDir = M.getProjectsDir() .. "/" .. projectHash .. "/memory"
-    if not utils.fileExists(memoryDir) then
+-- Returns array of {name, modified} (content loaded on-demand via getFilePath + utils.readFile)
+function M.loadMemoryFiles(projectHash)
+    local memoryDir = projectsDir .. "/" .. projectHash .. "/memory"
+    if not pathExists(memoryDir) then
         return {}
     end
 
     local files = {}
-    local items = utils.listDir(memoryDir)
+    local items = listDir(memoryDir)
 
     for _, filename in ipairs(items) do
         if filename:match("%.md$") then
@@ -107,12 +126,12 @@ end
 -- Load all projects with their memory files
 -- currentProjectHash: optional, prioritizes matching project to top of list
 -- Returns [{hash, decodedPath, isCurrent, files: [{name, modified}]}]
-function M.loadAllMemories(utils, log, decodeCwdPath, currentProjectHash)
-    local projects = M.listProjects(utils, decodeCwdPath, log)
+function M.loadAllMemories(log, decodeCwdPath, currentProjectHash)
+    local projects = M.listProjects(decodeCwdPath, log)
     local result = {}
 
     for _, project in ipairs(projects) do
-        local files = M.loadMemoryFiles(project.hash, utils)
+        local files = M.loadMemoryFiles(project.hash)
         if #files > 0 then
             table.insert(result, {
                 hash = project.hash,
