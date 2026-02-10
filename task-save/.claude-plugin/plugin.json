@@ -1,7 +1,7 @@
 {
   "name": "task-save",
   "description": "Capture conversation context as structured tasks with current status and next steps",
-  "version": "1.3.0",
+  "version": "1.4.0",
   "author": {
     "name": "Jongwon Choi",
     "url": "https://github.com/jongwony"
