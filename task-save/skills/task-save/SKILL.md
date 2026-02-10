@@ -66,7 +66,7 @@ Create a single TaskCreate with:
 - `source_cwd`: current working directory (`$PWD`) at handoff time
 - `source_session_id`: current session UUID (stored for future UI integration; currently consumed via the description endnote below)
 
-**Obtaining `source_session_id`**: Run `ls -t ~/.claude/projects/*/*.jsonl | head -1` and extract the UUID filename (without `.jsonl` extension). This returns the most recently modified session file. **Note**: In multi-session environments, this may return a different session's ID. To reduce ambiguity, scope to the current project: `ls -t ~/.claude/projects/$(pwd | tr '/' '-' | sed 's/^-//')/*.jsonl | head -1`.
+**Obtaining `source_session_id`**: Run `ls -t ~/.claude/projects/*/*.jsonl | head -1` and extract the UUID filename (without `.jsonl` extension). This returns the most recently modified session file. **Note**: In multi-session environments, this may return a different session's ID. Run the command immediately before TaskCreate to minimize the window for ambiguity.
 
 When `handoff: true`, ClaudePanel.spoon renders the task with a distinct handoff launcher that opens a new Claude session in `target_cwd` with a fresh `CLAUDE_CODE_TASK_LIST_ID`.
 
