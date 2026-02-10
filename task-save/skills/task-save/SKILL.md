@@ -64,9 +64,9 @@ Create a single TaskCreate with:
 
 - `target_cwd`: resolved absolute path from `--cwd` argument
 - `source_cwd`: current working directory (`$PWD`) at handoff time
-- `source_session_id`: current session UUID (for quick lookup by UI components like ClaudePanel.spoon)
+- `source_session_id`: current session UUID (stored for future UI integration; currently consumed via the description endnote below)
 
-**Obtaining `source_session_id`**: Run `ls -t ~/.claude/projects/*/*.jsonl | head -1` and extract the UUID filename (without `.jsonl` extension). This is the most recently active session.
+**Obtaining `source_session_id`**: Run `ls -t ~/.claude/projects/*/*.jsonl | head -1` and extract the UUID filename (without `.jsonl` extension). This returns the most recently modified session file. **Note**: In multi-session environments, this may return a different session's ID. To reduce ambiguity, scope to the current project: `ls -t ~/.claude/projects/$(pwd | tr '/' '-' | sed 's/^-//')/*.jsonl | head -1`.
 
 When `handoff: true`, ClaudePanel.spoon renders the task with a distinct handoff launcher that opens a new Claude session in `target_cwd` with a fresh `CLAUDE_CODE_TASK_LIST_ID`.
 
@@ -80,7 +80,9 @@ When `--cwd` is present, append the following endnote to the description after `
 To retrieve context from the originating session: `find ~/.claude/projects/ -name "<source_session_id>.jsonl"`
 ```
 
-This endnote is necessary because `TaskGet` API does not expose `metadata` fields. The description endnote ensures the handoff target session can discover and read the source conversation regardless of API limitations.
+Replace `<source_session_id>` with the actual UUID obtained above.
+
+This endnote is necessary because `TaskGet` API output does not include `metadata` fields. The description endnote ensures the handoff target session can discover and read the source conversation regardless of API limitations.
 
 ## Extraction Sources
 

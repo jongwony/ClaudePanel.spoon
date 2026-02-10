@@ -145,7 +145,7 @@ Key difference from resume: handoff shares the task list (`CLAUDE_CODE_TASK_LIST
 
 Handoff metadata schema:
 ```json
-{"source": "task-save", "handoff": true, "target_cwd": "/abs/path", "source_cwd": "/abs/current"}
+{"source": "task-save", "handoff": true, "target_cwd": "/abs/path", "source_cwd": "/abs/current", "source_session_id": "uuid"}
 ```
 
 UI helpers in `html.lua`: `generateLaunchBtn(task, utils)` and `generateCwdDisplay(task, utils)` handle both regular and handoff task rendering.
