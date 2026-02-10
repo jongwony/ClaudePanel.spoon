@@ -40,7 +40,7 @@ Create a single TaskCreate with:
 | Field | Format |
 |-------|--------|
 | **subject** | Imperative verb phrase (task goal) |
-| **description** | `**Current Status**: ...`<br>`**Next Steps**: ...` |
+| **description** | `**Current Status**: ...`<br>`**Next Steps**: ...`<br>(handoff: append source session endnote) |
 | **activeForm** | Present continuous form (spinner display) |
 | **metadata** | Context fields (see below) |
 
@@ -57,14 +57,32 @@ Create a single TaskCreate with:
   "source": "task-save",
   "handoff": true,
   "target_cwd": "/absolute/path/to/target",
-  "source_cwd": "/absolute/path/to/current"
+  "source_cwd": "/absolute/path/to/current",
+  "source_session_id": "uuid-of-current-session"
 }
 ```
 
 - `target_cwd`: resolved absolute path from `--cwd` argument
 - `source_cwd`: current working directory (`$PWD`) at handoff time
+- `source_session_id`: current session UUID (stored for future UI integration; currently consumed via the description endnote below)
+
+**Obtaining `source_session_id`**: Run `ls -t ~/.claude/projects/*/*.jsonl | head -1` and extract the UUID filename (without `.jsonl` extension). This returns the most recently modified session file. **Note**: In multi-session environments, this may return a different session's ID. Run the command immediately before TaskCreate to minimize the window for ambiguity.
 
 When `handoff: true`, ClaudePanel.spoon renders the task with a distinct handoff launcher that opens a new Claude session in `target_cwd` with a fresh `CLAUDE_CODE_TASK_LIST_ID`.
+
+### Handoff Description Endnote
+
+When `--cwd` is present, append the following endnote to the description after `**Next Steps**`:
+
+```
+---
+**Source Session**: `<source_session_id>`
+To retrieve context from the originating session: `find ~/.claude/projects/ -name "<source_session_id>.jsonl"`
+```
+
+Replace `<source_session_id>` with the actual UUID obtained above.
+
+This endnote is necessary because `TaskGet` API output does not include `metadata` fields. The description endnote ensures the handoff target session can discover and read the source conversation regardless of API limitations.
 
 ## Extraction Sources
 
