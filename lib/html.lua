@@ -1107,6 +1107,23 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 }
             });
 
+            // Update section header counts
+            const sectionNames = {in_progress: 'In Progress', pending: 'Pending', completed: 'Completed'};
+            document.querySelectorAll('.section-header[data-section]').forEach(header => {
+                const section = header.closest('.section');
+                const total = parseInt(header.dataset.total);
+                const key = header.dataset.section;
+                const label = sectionNames[key] || key;
+                if (!normalizedQuery) {
+                    header.textContent = label + ' (' + total + ')';
+                    if (section) section.classList.remove('hidden');
+                } else {
+                    const visible = section ? section.querySelectorAll('.task:not(.hidden)').length : 0;
+                    header.textContent = label + ' (' + visible + ')';
+                    if (section) section.classList.toggle('hidden', visible === 0);
+                }
+            });
+
             // Show/hide no results message
             let noResultsEl = document.getElementById('noResults');
             if (normalizedQuery && visibleCount === 0) {
@@ -1266,7 +1283,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         <div class="header-row">
             <span class="title">Claude Tasks</span>
             <div class="header-actions">
-                <span class="count">]] .. #tasks .. [[ tasks</span>
+                <span class="count">]] .. (#inProgressTasks + #pendingTasks) .. [[ tasks</span>
                 <button class="help-btn" onclick="toggleHelp()" title="Keyboard shortcuts (?)">?</button>
             </div>
         </div>
@@ -1313,7 +1330,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
     if #inProgressTasks > 0 then
         html = html .. [[
     <div class="section">
-        <div class="section-header">In Progress (]] .. #inProgressTasks .. [[)</div>
+        <div class="section-header" data-section="in_progress" data-total="]] .. #inProgressTasks .. [[">In Progress (]] .. #inProgressTasks .. [[)</div>
 ]]
         for _, task in ipairs(inProgressTasks) do
             local blocked = ""
@@ -1353,7 +1370,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
     if #pendingTasks > 0 then
         html = html .. [[
     <div class="section">
-        <div class="section-header">Pending (]] .. #pendingTasks .. [[)</div>
+        <div class="section-header" data-section="pending" data-total="]] .. #pendingTasks .. [[">Pending (]] .. #pendingTasks .. [[)</div>
 ]]
         for _, task in ipairs(pendingTasks) do
             local blocked = ""
@@ -1394,7 +1411,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         local displayCount = math.min(5, #completedTasks)
         html = html .. [[
     <div class="section">
-        <div class="section-header">Completed (]] .. #completedTasks .. [[)</div>
+        <div class="section-header" data-section="completed" data-total="]] .. #completedTasks .. [[">Completed (]] .. #completedTasks .. [[)</div>
 ]]
         for i = 1, displayCount do
             local task = completedTasks[i]
