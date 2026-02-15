@@ -1096,8 +1096,10 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
 
                 const subject = task.querySelector('.task-subject')?.textContent?.toLowerCase() || '';
                 const description = task.querySelector('.task-description')?.textContent?.toLowerCase() || '';
+                const cwdPath = task.querySelector('.cwd-path')?.textContent?.toLowerCase() || '';
+                const metaBadges = Array.from(task.querySelectorAll('.metadata-badge')).map(b => b.textContent.toLowerCase()).join(' ');
 
-                if (subject.includes(normalizedQuery) || description.includes(normalizedQuery)) {
+                if (subject.includes(normalizedQuery) || description.includes(normalizedQuery) || cwdPath.includes(normalizedQuery) || metaBadges.includes(normalizedQuery)) {
                     task.classList.remove('hidden');
                     visibleCount++;
                 } else {
