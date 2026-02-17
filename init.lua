@@ -87,6 +87,13 @@ end
 local memoryCache = { data = {}, sessionId = nil }
 local currentMode = 'session' -- tracks JS mode state for refresh persistence
 local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
+local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
+
+local function tableSize(t)
+    local count = 0
+    for _ in pairs(t) do count = count + 1 end
+    return count
+end
 
 local function loadMemoryData()
     local currentProjectHash = nil
@@ -125,6 +132,16 @@ local function refreshWebView()
     end
     local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode, cwdGroups, cwdCollapseState)
     webviewModule.refreshWebView(htmlContent, log)
+
+    -- Persist CWD cache when it grows (new entries discovered)
+    local currentCache = tasks.getCwdCache()
+    local currentSize = tableSize(currentCache)
+    if currentSize ~= lastCwdCacheSize then
+        obj.state.cwdCache = currentCache
+        lastCwdCacheSize = currentSize
+        saveState()
+    end
+
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
 
@@ -206,18 +223,26 @@ function obj:init()
     return self
 end
 
+-- Shared watcher callback: invalidate changed sessions then refresh
+local function watcherCallback(needsRestart, changedSessions)
+    if needsRestart then
+        obj:stop()
+        obj:start()
+    else
+        if changedSessions then
+            for _, sid in ipairs(changedSessions) do
+                tasks.invalidateSession(sid)
+            end
+        end
+        refreshWebView()
+    end
+end
+
 function obj:show()
     webviewModule.createWebView(obj.config, actionHandler, log)
     refreshWebView()
     webviewModule.show(log)
-    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, function(needsRestart)
-        if needsRestart then
-            obj:stop()
-            obj:start()
-        else
-            refreshWebView()
-        end
-    end)
+    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, watcherCallback)
     return self
 end
 
@@ -250,14 +275,7 @@ function obj:setTaskListId(id)
 
     -- Restart file watcher for new session
     watcher.stopPathWatcher(log)
-    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, function(needsRestart)
-        if needsRestart then
-            obj:stop()
-            obj:start()
-        else
-            refreshWebView()
-        end
-    end)
+    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, watcherCallback)
 
     obj:refresh()
     return self
@@ -688,16 +706,14 @@ function obj:start()
     local loaded = stateModule.loadState(obj.state.configPath, utils, log)
     obj.state.currentTaskListId = loaded.currentTaskListId
     obj.state.lastUpdateCheck = loaded.lastUpdateCheck
+    obj.state.cwdCache = loaded.cwdCache or {}
     obj.config.taskListId = loaded.currentTaskListId
 
-    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, function(needsRestart)
-        if needsRestart then
-            obj:stop()
-            obj:start()
-        else
-            refreshWebView()
-        end
-    end)
+    -- Restore persisted CWD cache
+    tasks.setCwdCache(loaded.cwdCache or {})
+    lastCwdCacheSize = tableSize(loaded.cwdCache or {})
+
+    watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, watcherCallback)
 
     -- Async update check with delay
     if obj.config.checkForUpdates then

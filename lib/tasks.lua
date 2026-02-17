@@ -3,8 +3,11 @@
 
 local M = {}
 
--- CWD cache (module-level)
+-- CWD cache (module-level, persistable via setCwdCache/getCwdCache)
 local cwdCache = {}
+
+-- Session task cache (module-level, invalidated per-session by watcher)
+local sessionTaskCache = {}
 
 -- Encode a path back to Claude's format for verification
 -- /Users/choi/.claude → -Users-choi--claude
@@ -125,7 +128,30 @@ function M.getCwdFromSessionId(sessionId, utils)
     return nil
 end
 
--- Load all tasks from session directories
+-- Load tasks from a single session directory
+local function loadSessionFromDisk(sessionId, utils, log)
+    local sessionTasks = {}
+    local sessionDir = utils.getTasksDir() .. "/" .. sessionId
+    local files = utils.listDir(sessionDir)
+    for _, filename in ipairs(files) do
+        if filename:match("%.json$") then
+            local filepath = sessionDir .. "/" .. filename
+            local content = utils.readFile(filepath)
+            if content then
+                local task = utils.parseJSON(content)
+                if task then
+                    task._sessionId = sessionId
+                    task._filepath = filepath
+                    task._cwd = M.getCwdFromSessionId(sessionId, utils)
+                    table.insert(sessionTasks, task)
+                end
+            end
+        end
+    end
+    return sessionTasks
+end
+
+-- Load all tasks from session directories (with per-session caching)
 function M.loadAllTasks(config, utils, log)
     local tasks = {}
     local tasksDir = utils.getTasksDir()
@@ -144,24 +170,20 @@ function M.loadAllTasks(config, utils, log)
     end
 
     for _, sessionId in ipairs(sessions) do
-        local sessionDir = tasksDir .. "/" .. sessionId
-        local files = utils.listDir(sessionDir)
+        if not sessionTaskCache[sessionId] then
+            sessionTaskCache[sessionId] = loadSessionFromDisk(sessionId, utils, log)
+        end
+        for _, task in ipairs(sessionTaskCache[sessionId]) do
+            table.insert(tasks, task)
+        end
+    end
 
-        for _, filename in ipairs(files) do
-            if filename:match("%.json$") then
-                local filepath = sessionDir .. "/" .. filename
-                local content = utils.readFile(filepath)
-
-                if content then
-                    local task = utils.parseJSON(content)
-                    if task then
-                        task._sessionId = sessionId
-                        task._filepath = filepath
-                        task._cwd = M.getCwdFromSessionId(sessionId, utils)
-                        table.insert(tasks, task)
-                    end
-                end
-            end
+    -- Clean up cache for sessions that no longer exist on disk
+    if not config.taskListId then
+        local sessionSet = {}
+        for _, s in ipairs(sessions) do sessionSet[s] = true end
+        for sid in pairs(sessionTaskCache) do
+            if not sessionSet[sid] then sessionTaskCache[sid] = nil end
         end
     end
 
@@ -227,9 +249,25 @@ function M.groupTasksByCwd(allTasks)
     return groups
 end
 
--- Clear CWD cache
+-- Invalidate cached tasks for a specific session (called by watcher)
+function M.invalidateSession(sessionId)
+    sessionTaskCache[sessionId] = nil
+end
+
+-- Set CWD cache from persisted state
+function M.setCwdCache(cache)
+    cwdCache = cache or {}
+end
+
+-- Get CWD cache for persistence
+function M.getCwdCache()
+    return cwdCache
+end
+
+-- Clear all caches
 function M.clearCache()
     cwdCache = {}
+    sessionTaskCache = {}
 end
 
 return M

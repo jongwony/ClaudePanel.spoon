@@ -38,13 +38,25 @@ function M.startPathWatcher(tasksDir, config, utils, log, onChangeCallback)
     pathWatcher = hs.pathwatcher.new(tasksDir, function(paths)
         log("File change detected: " .. table.concat(paths, ", "))
 
+        -- Extract changed session IDs from paths
+        local changedSessions = {}
+        local seen = {}
+        for _, p in ipairs(paths) do
+            local relative = p:sub(#tasksDir + 2)
+            local sessionId = relative:match("^([^/]+)")
+            if sessionId and not seen[sessionId] then
+                table.insert(changedSessions, sessionId)
+                seen[sessionId] = true
+            end
+        end
+
         -- Debounce: only process last change in rapid succession
         if refreshTimer then
             refreshTimer:stop()
         end
 
         refreshTimer = hs.timer.doAfter(config.refreshDebounce, function()
-            if onChangeCallback then onChangeCallback(false) end  -- false = just refresh
+            if onChangeCallback then onChangeCallback(false, changedSessions) end
             refreshTimer = nil
         end)
     end)
