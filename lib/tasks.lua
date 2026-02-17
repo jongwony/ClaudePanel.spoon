@@ -179,6 +179,54 @@ function M.loadAllTasks(config, utils, log)
     return tasks
 end
 
+-- Group tasks by CWD for Projects view
+function M.groupTasksByCwd(allTasks)
+    local groups = {}
+    local groupMap = {} -- cwd -> index in groups
+
+    for _, task in ipairs(allTasks) do
+        local cwd = task._cwd or "Unknown"
+        if not groupMap[cwd] then
+            local projectName
+            if cwd == "Unknown" then
+                projectName = "Unknown"
+            else
+                projectName = cwd:match("[^/]+$") or cwd
+            end
+            table.insert(groups, {
+                cwd = cwd,
+                projectName = projectName,
+                tasks = {}
+            })
+            groupMap[cwd] = #groups
+        end
+        table.insert(groups[groupMap[cwd]].tasks, task)
+    end
+
+    -- Sort tasks within each group by status priority
+    local statusPriority = {in_progress = 1, pending = 2, completed = 3}
+    for _, group in ipairs(groups) do
+        table.sort(group.tasks, function(a, b)
+            local pa = statusPriority[a.status] or 2
+            local pb = statusPriority[b.status] or 2
+            if pa ~= pb then return pa < pb end
+            local aNum = tonumber(a.id)
+            local bNum = tonumber(b.id)
+            if aNum and bNum then return aNum < bNum end
+            return tostring(a.id) < tostring(b.id)
+        end)
+    end
+
+    -- Sort groups: alphabetical by projectName, "Unknown" last
+    table.sort(groups, function(a, b)
+        if a.projectName == "Unknown" then return false end
+        if b.projectName == "Unknown" then return true end
+        return a.projectName:lower() < b.projectName:lower()
+    end)
+
+    return groups
+end
+
 -- Clear CWD cache
 function M.clearCache()
     cwdCache = {}

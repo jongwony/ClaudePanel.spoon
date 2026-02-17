@@ -86,6 +86,7 @@ end
 
 local memoryCache = { data = {}, sessionId = nil }
 local currentMode = 'session' -- tracks JS mode state for refresh persistence
+local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
 
 local function loadMemoryData()
     local currentProjectHash = nil
@@ -118,7 +119,11 @@ local function refreshWebView()
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
     local currentSessionValue = obj.state.currentTaskListId or ''
     local memoryData = getMemoryData()
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode)
+    local cwdGroups = nil
+    if currentMode == 'cwd' then
+        cwdGroups = tasks.groupTasksByCwd(allTasks)
+    end
+    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode, cwdGroups, cwdCollapseState)
     webviewModule.refreshWebView(htmlContent, log)
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
@@ -130,8 +135,8 @@ end
 local function actionHandler(action, params)
     if action == "setMode" then
         currentMode = params.value or 'session'
-        if currentMode == 'search' then
-            -- Load tasks from ALL sessions for cross-session search
+        if currentMode == 'search' or currentMode == 'cwd' then
+            -- Load tasks from ALL sessions for cross-session search/cwd view
             obj.config.taskListId = nil
             refreshWebView()
         elseif currentMode == 'memory' then
@@ -166,6 +171,11 @@ local function actionHandler(action, params)
         obj:showMemoryDetail(params.projectHash, params.filename)
     elseif action == "openMemoryInEditor" then
         obj:openMemoryInEditor(params.projectHash, params.filename)
+    elseif action == "toggleCwdGroup" then
+        if params.cwd then
+            cwdCollapseState[params.cwd] = not cwdCollapseState[params.cwd] or nil
+            refreshWebView()
+        end
     else
         log("actionHandler: unrecognized action: " .. tostring(action))
     end
