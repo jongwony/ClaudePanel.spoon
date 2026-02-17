@@ -130,8 +130,18 @@ end
 local function actionHandler(action, params)
     if action == "setMode" then
         currentMode = params.value or 'session'
-        if currentMode == 'memory' then
+        if currentMode == 'search' then
+            -- Load tasks from ALL sessions for cross-session search
+            obj.config.taskListId = nil
+            refreshWebView()
+        elseif currentMode == 'memory' then
+            -- Restore current session scope
+            obj.config.taskListId = obj.state.currentTaskListId
             invalidateMemoryCache()
+            refreshWebView()
+        else
+            -- Restore current session scope
+            obj.config.taskListId = obj.state.currentTaskListId
             refreshWebView()
         end
     elseif action == "setSession" then
