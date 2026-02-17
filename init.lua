@@ -6,7 +6,7 @@ local obj = {}
 
 -- Spoon Metadata
 obj.name = "ClaudePanel"
-obj.version = "2.2.0"
+obj.version = "2.3.0"
 obj.author = "jongwony <lastone9182@gmail.com>"
 obj.license = "MIT - https://opensource.org/licenses/MIT"
 obj.homepage = "https://github.com/jongwony/ClaudePanel.spoon"
