@@ -1369,9 +1369,9 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                     toggleHelp();
                     return;
                 }
-                // Exit search or memory mode if active
-                if (currentMode === 'search' || currentMode === 'cwd' || currentMode === 'memory') {
-                    setMode('session');
+                // Exit to search mode (default)
+                if (currentMode !== 'search') {
+                    setMode('search');
                     return;
                 }
                 // Collapse form if open
