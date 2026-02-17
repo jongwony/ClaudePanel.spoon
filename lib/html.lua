@@ -1386,7 +1386,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             // Tab cycling (global, works even in input fields)
             if (e.key === '/') {
                 e.preventDefault();
-                var modes = ['session', 'search', 'cwd', 'memory'];
+                var modes = ['search', 'cwd', 'session', 'memory'];
                 var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
                 setMode(modes[nextIndex]);
                 return;
