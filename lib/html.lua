@@ -1309,7 +1309,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             <div class="input-container hidden" id="searchContainer">
                 <span class="search-icon">⌕</span>
                 <input type="text" class="search-input" id="searchInput"
-                       placeholder="Search tasks..."
+                       placeholder="Search all sessions..."
                        oninput="onSearchInput(this)"
                        onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
             </div>
