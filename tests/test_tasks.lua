@@ -156,6 +156,74 @@ test("Non-existent path returns nil", function()
     assertEqual(result, nil)
 end)
 
+-- groupTasksByCwd tests
+print("\n=== groupTasksByCwd Tests ===\n")
+
+test("Empty tasks returns empty groups", function()
+    local result = tasks.groupTasksByCwd({})
+    assertEqual(#result, 0, "Should return empty table")
+end)
+
+test("Tasks grouped by _cwd", function()
+    local input = {
+        {id = "1", subject = "task1", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "2", subject = "task2", status = "in_progress", _sessionId = "s2", _cwd = "/project/b"},
+        {id = "3", subject = "task3", status = "completed", _sessionId = "s1", _cwd = "/project/a"},
+    }
+    local result = tasks.groupTasksByCwd(input)
+    assertEqual(#result, 2, "Should have 2 groups")
+    assertEqual(result[1].projectName, "a", "First group alphabetically")
+    assertEqual(result[2].projectName, "b", "Second group alphabetically")
+    assertEqual(#result[1].tasks, 2, "Group a has 2 tasks")
+    assertEqual(#result[2].tasks, 1, "Group b has 1 task")
+end)
+
+test("Tasks without _cwd grouped as Unknown (last)", function()
+    local input = {
+        {id = "1", subject = "task1", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "2", subject = "task2", status = "pending", _sessionId = "s2"},
+    }
+    local result = tasks.groupTasksByCwd(input)
+    assertEqual(#result, 2, "Should have 2 groups")
+    assertEqual(result[1].projectName, "a", "Known project first")
+    assertEqual(result[2].projectName, "Unknown", "Unknown last")
+end)
+
+test("Tasks sorted by status within group (in_progress > pending > completed)", function()
+    local input = {
+        {id = "1", subject = "completed", status = "completed", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "2", subject = "pending", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "3", subject = "in_progress", status = "in_progress", _sessionId = "s1", _cwd = "/project/a"},
+    }
+    local result = tasks.groupTasksByCwd(input)
+    assertEqual(#result, 1, "Should have 1 group")
+    assertEqual(result[1].tasks[1].status, "in_progress", "in_progress first")
+    assertEqual(result[1].tasks[2].status, "pending", "pending second")
+    assertEqual(result[1].tasks[3].status, "completed", "completed last")
+end)
+
+test("Groups sorted alphabetically by projectName", function()
+    local input = {
+        {id = "1", subject = "t1", status = "pending", _sessionId = "s1", _cwd = "/z-project"},
+        {id = "2", subject = "t2", status = "pending", _sessionId = "s2", _cwd = "/a-project"},
+    }
+    local result = tasks.groupTasksByCwd(input)
+    assertEqual(result[1].projectName, "a-project", "a-project first")
+    assertEqual(result[2].projectName, "z-project", "z-project second")
+end)
+
+test("Same status tasks sorted by ID within group", function()
+    local input = {
+        {id = "3", subject = "t3", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "1", subject = "t1", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+        {id = "2", subject = "t2", status = "pending", _sessionId = "s1", _cwd = "/project/a"},
+    }
+    local result = tasks.groupTasksByCwd(input)
+    assertEqual(result[1].tasks[1].id, "1", "ID 1 first")
+    assertEqual(result[1].tasks[2].id, "2", "ID 2 second")
+    assertEqual(result[1].tasks[3].id, "3", "ID 3 third")
+end)
+
 -- Summary
 print(string.format("\n=== Results: %d passed, %d failed ===\n",
     TEST_PASSED, TEST_FAILED))

@@ -76,7 +76,7 @@ function M.generateCwdDisplay(task, utils)
 end
 
 -- Generate full HTML for task viewer
-function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData, currentMode)
+function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData, currentMode, cwdGroups, cwdCollapseState)
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
@@ -601,6 +601,50 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             padding: 20px;
             text-align: center;
         }
+        /* CWD (Projects) mode */
+        .cwd-group {
+            margin-bottom: 8px;
+        }
+        .cwd-group-header {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            padding: 8px 10px;
+            cursor: pointer;
+            border-radius: 6px;
+        }
+        .cwd-group-header:hover {
+            background: rgba(255, 255, 255, 0.05);
+        }
+        .cwd-group-chevron {
+            font-size: 10px;
+            color: #888;
+            width: 12px;
+            flex-shrink: 0;
+        }
+        .cwd-group-name {
+            font-size: 13px;
+            font-weight: 500;
+            color: #e5e5e5;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            flex: 1;
+        }
+        .cwd-group-count {
+            font-size: 11px;
+            color: #888;
+            background: rgba(255, 255, 255, 0.08);
+            padding: 1px 6px;
+            border-radius: 10px;
+            flex-shrink: 0;
+        }
+        .cwd-group-tasks {
+            padding-left: 12px;
+        }
+        .cwd-group.collapsed .cwd-group-tasks {
+            display: none;
+        }
         .action-btn {
             background: rgba(34, 197, 94, 0.15);
             border: 1px solid rgba(34, 197, 94, 0.3);
@@ -716,10 +760,11 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         let isCreating = false;
         let formCollapsed = true;
         let focusedIndex = -1;
-        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'memory'
+        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'cwd' | 'memory'
         let searchDebounceTimer = null;
         let helpVisible = false;
         let memoryFocusedIndex = -1;
+        let cwdFocusedIndex = -1;
 
         // Check if a key matches a binding
         // Format: {modifiers: ['cmd'], keys: ['Backspace']}
@@ -768,8 +813,10 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             var sessionContainer = document.getElementById('sessionContainer');
             var searchContainer = document.getElementById('searchContainer');
             var memorySearchContainer = document.getElementById('memorySearchContainer');
+            var cwdSearchContainer = document.getElementById('cwdSearchContainer');
             var taskSections = document.getElementById('taskSections');
             var memoryList = document.getElementById('memoryList');
+            var cwdList = document.getElementById('cwdList');
 
             // Update tab active states
             document.querySelectorAll('.tab-btn').forEach(function(t) { t.classList.remove('active'); });
@@ -778,23 +825,42 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
 
             releaseToNavigation();
             memoryFocusedIndex = -1;
+            cwdFocusedIndex = -1;
             if (memoryList) {
                 memoryList.querySelectorAll('.memory-file').forEach(function(f) { f.classList.remove('focused'); });
+            }
+            if (cwdList) {
+                cwdList.querySelectorAll('.task').forEach(function(t) { t.classList.remove('focused'); });
             }
 
             if (mode === 'search') {
                 sessionContainer.classList.add('hidden');
                 searchContainer.classList.remove('hidden');
                 if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (cwdSearchContainer) cwdSearchContainer.classList.add('hidden');
                 if (taskSections) taskSections.style.display = '';
                 if (memoryList) memoryList.classList.remove('visible');
+                if (cwdList) cwdList.classList.remove('visible');
                 document.getElementById('searchInput').focus();
+            } else if (mode === 'cwd') {
+                sessionContainer.classList.add('hidden');
+                searchContainer.classList.add('hidden');
+                if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (cwdSearchContainer) cwdSearchContainer.classList.remove('hidden');
+                if (taskSections) taskSections.style.display = 'none';
+                if (memoryList) memoryList.classList.remove('visible');
+                if (cwdList) cwdList.classList.add('visible');
+                clearSearch();
+                var cwdSearch = document.getElementById('cwdSearchInput');
+                if (cwdSearch) cwdSearch.focus();
             } else if (mode === 'memory') {
                 sessionContainer.classList.add('hidden');
                 searchContainer.classList.add('hidden');
                 if (memorySearchContainer) memorySearchContainer.classList.remove('hidden');
+                if (cwdSearchContainer) cwdSearchContainer.classList.add('hidden');
                 if (taskSections) taskSections.style.display = 'none';
                 if (memoryList) memoryList.classList.add('visible');
+                if (cwdList) cwdList.classList.remove('visible');
                 clearSearch();
                 var memSearch = document.getElementById('memorySearchInput');
                 if (memSearch) memSearch.focus();
@@ -802,8 +868,10 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 sessionContainer.classList.remove('hidden');
                 searchContainer.classList.add('hidden');
                 if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (cwdSearchContainer) cwdSearchContainer.classList.add('hidden');
                 if (taskSections) taskSections.style.display = '';
                 if (memoryList) memoryList.classList.remove('visible');
+                if (cwdList) cwdList.classList.remove('visible');
                 clearSearch();
                 document.getElementById('sessionInput').focus();
             }
@@ -1074,6 +1142,108 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             filterMemoryFiles(input.value);
         }
 
+        // CWD (Projects) mode
+        function toggleCwdGroup(cwd) {
+            window.webkit.messageHandlers.taskBridge.postMessage({
+                action: 'toggleCwdGroup',
+                cwd: cwd
+            });
+        }
+
+        function getVisibleCwdTasks() {
+            var cwdList = document.getElementById('cwdList');
+            if (!cwdList) return [];
+            return Array.from(cwdList.querySelectorAll('.cwd-group:not(.collapsed) .task:not(.hidden)'));
+        }
+
+        function updateCwdFocus(newIndex) {
+            var tasks = getVisibleCwdTasks();
+            if (tasks.length === 0) return;
+            newIndex = Math.max(0, Math.min(newIndex, tasks.length - 1));
+            tasks.forEach(function(t) { t.classList.remove('focused'); });
+            cwdFocusedIndex = newIndex;
+            var focusedTask = tasks[cwdFocusedIndex];
+            focusedTask.classList.add('focused');
+            focusedTask.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+        }
+
+        function openFocusedCwdTask() {
+            var tasks = getVisibleCwdTasks();
+            if (cwdFocusedIndex >= 0 && cwdFocusedIndex < tasks.length) {
+                var descEl = tasks[cwdFocusedIndex].querySelector('.task-description');
+                if (descEl) descEl.click();
+            }
+        }
+
+        function launchFocusedCwdTask() {
+            var tasks = getVisibleCwdTasks();
+            if (cwdFocusedIndex >= 0 && cwdFocusedIndex < tasks.length) {
+                var launchBtn = tasks[cwdFocusedIndex].querySelector('.task-launch-btn');
+                if (launchBtn) launchBtn.click();
+            }
+        }
+
+        function deleteFocusedCwdTask() {
+            var tasks = getVisibleCwdTasks();
+            if (cwdFocusedIndex < 0 || cwdFocusedIndex >= tasks.length) return;
+            var task = tasks[cwdFocusedIndex];
+            var taskId = task.dataset.taskId;
+            var sessionId = task.dataset.sessionId;
+            if (!taskId || !sessionId) return;
+            var subjectEl = task.querySelector('.task-subject');
+            var title = subjectEl ? subjectEl.textContent.trim() : 'this task';
+            if (confirm('Delete "' + title + '"?\n\nThis cannot be undone.')) {
+                window.webkit.messageHandlers.taskBridge.postMessage({
+                    action: 'deleteTask',
+                    taskId: taskId,
+                    sessionId: sessionId
+                });
+            }
+        }
+
+        function filterCwdTasks(query) {
+            var cwdList = document.getElementById('cwdList');
+            if (!cwdList) return;
+            var normalizedQuery = query.toLowerCase().trim();
+            var groups = cwdList.querySelectorAll('.cwd-group');
+            groups.forEach(function(group) {
+                var header = group.querySelector('.cwd-group-name');
+                var groupText = header ? header.textContent.toLowerCase() : '';
+                var fullPath = header ? (header.title || '').toLowerCase() : '';
+                var groupMatch = normalizedQuery && (groupText.includes(normalizedQuery) || fullPath.includes(normalizedQuery));
+                var tasks = group.querySelectorAll('.task');
+                var visibleInGroup = 0;
+                tasks.forEach(function(task) {
+                    if (!normalizedQuery || groupMatch) {
+                        task.classList.remove('hidden');
+                        visibleInGroup++;
+                        return;
+                    }
+                    var subject = task.querySelector('.task-subject');
+                    var subjectText = subject ? subject.textContent.toLowerCase() : '';
+                    var desc = task.querySelector('.task-description');
+                    var descText = desc ? desc.textContent.toLowerCase() : '';
+                    if (subjectText.includes(normalizedQuery) || descText.includes(normalizedQuery)) {
+                        task.classList.remove('hidden');
+                        visibleInGroup++;
+                    } else {
+                        task.classList.add('hidden');
+                    }
+                });
+                group.style.display = (visibleInGroup > 0 || !normalizedQuery) ? '' : 'none';
+            });
+            cwdFocusedIndex = -1;
+        }
+
+        function onCwdSearchInput(input) {
+            if (searchDebounceTimer) {
+                clearTimeout(searchDebounceTimer);
+            }
+            searchDebounceTimer = setTimeout(function() {
+                filterCwdTasks(input.value);
+            }, 200);
+        }
+
         function clearSearch() {
             const searchInput = document.getElementById('searchInput');
             if (searchInput) {
@@ -1200,7 +1370,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                     return;
                 }
                 // Exit search or memory mode if active
-                if (currentMode === 'search' || currentMode === 'memory') {
+                if (currentMode === 'search' || currentMode === 'cwd' || currentMode === 'memory') {
                     setMode('session');
                     return;
                 }
@@ -1216,7 +1386,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             // Tab cycling (global, works even in input fields)
             if (e.key === '/') {
                 e.preventDefault();
-                var modes = ['session', 'search', 'memory'];
+                var modes = ['session', 'search', 'cwd', 'memory'];
                 var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
                 setMode(modes[nextIndex]);
                 return;
@@ -1244,6 +1414,33 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                     if (matchesBinding(e, 'launchTask')) {
                         e.preventDefault();
                         launchFocusedMemoryFile();
+                        return;
+                    }
+                } else if (currentMode === 'cwd') {
+                    // CWD mode navigation
+                    if (matchesBinding(e, 'navigateDown')) {
+                        e.preventDefault();
+                        updateCwdFocus(cwdFocusedIndex + 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'navigateUp')) {
+                        e.preventDefault();
+                        updateCwdFocus(cwdFocusedIndex - 1);
+                        return;
+                    }
+                    if (matchesBinding(e, 'openTask')) {
+                        e.preventDefault();
+                        openFocusedCwdTask();
+                        return;
+                    }
+                    if (matchesBinding(e, 'launchTask')) {
+                        e.preventDefault();
+                        launchFocusedCwdTask();
+                        return;
+                    }
+                    if (matchesBinding(e, 'deleteTask')) {
+                        e.preventDefault();
+                        deleteFocusedCwdTask();
                         return;
                     }
                 } else {
@@ -1288,8 +1485,9 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             </div>
         </div>
         <div class="tab-bar">
-            <button id="tab-session" class="tab-btn active" onclick="setMode('session')">Tasks</button>
             <button id="tab-search" class="tab-btn" onclick="setMode('search')">Search</button>
+            <button id="tab-cwd" class="tab-btn" onclick="setMode('cwd')">Projects</button>
+            <button id="tab-session" class="tab-btn active" onclick="setMode('session')">Tasks</button>
             <button id="tab-memory" class="tab-btn memory-tab" onclick="setMode('memory')">Memory</button>
             <span class="tab-spacer"></span>
             <button id="quickUpdateBtn" class="action-btn" onclick="showQuickUpdateDialog()" title="Quick Task ⌘E"]] .. (currentSessionValue == '' and ' disabled' or '') .. [[>⚡</button>
@@ -1318,6 +1516,13 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 <input type="text" class="search-input" id="memorySearchInput"
                        placeholder="Filter by filename or project path..."
                        oninput="onMemorySearchInput(this)"
+                       onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
+            </div>
+            <div class="input-container hidden" id="cwdSearchContainer">
+                <span class="search-icon">📁</span>
+                <input type="text" class="search-input" id="cwdSearchInput"
+                       placeholder="Filter projects..."
+                       oninput="onCwdSearchInput(this)"
                        onkeydown="if(event.key==='Enter'){releaseToNavigation();event.preventDefault();}">
             </div>
         </div>
@@ -1507,6 +1712,96 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         end
     else
         html = html .. '        <div class="memory-empty">No memory files found.</div>\n'
+    end
+    html = html .. '    </div>\n'
+
+    -- CWD list (hidden by default, shown when cwd mode active)
+    html = html .. '    <div id="cwdList" class="memory-list">\n'
+    if cwdGroups and #cwdGroups > 0 then
+        for _, group in ipairs(cwdGroups) do
+            local collapsed = cwdCollapseState and cwdCollapseState[group.cwd]
+            local collapsedClass = collapsed and ' collapsed' or ''
+            local chevron = collapsed and '&#9654;' or '&#9660;'
+            -- Count active tasks (non-completed)
+            local activeCount = 0
+            for _, t in ipairs(group.tasks) do
+                if t.status ~= "completed" then activeCount = activeCount + 1 end
+            end
+            local cwdJson = utils.jsonEncodeString(group.cwd)
+            html = html .. '        <div class="cwd-group' .. collapsedClass .. '">\n'
+            html = html .. "            <div class='cwd-group-header' onclick='toggleCwdGroup(" .. cwdJson .. ")'>\n"
+            html = html .. '                <span class="cwd-group-chevron">' .. chevron .. '</span>\n'
+            html = html .. '                <span class="cwd-group-name" title="' .. utils.escapeHtml(group.cwd) .. '">' .. utils.escapeHtml(group.projectName) .. '</span>\n'
+            html = html .. '                <span class="cwd-group-count">' .. activeCount .. ' active</span>\n'
+            html = html .. '            </div>\n'
+            html = html .. '            <div class="cwd-group-tasks">\n'
+
+            local completedCount = 0
+            local completedTotal = 0
+            for _, t in ipairs(group.tasks) do
+                if t.status == "completed" then completedTotal = completedTotal + 1 end
+            end
+
+            for _, task in ipairs(group.tasks) do
+                local skip = false
+                if task.status == "completed" then
+                    completedCount = completedCount + 1
+                    if completedCount > 5 then skip = true end
+                end
+
+                if not skip then
+                    local statusClass = "status-" .. (task.status or "pending")
+                    local statusIcon = M.getStatusIcon(task.status)
+                    local opacityStyle = task.status == "completed" and ' style="opacity: 0.6;"' or ''
+                    local launchBtn = M.generateLaunchBtn(task, utils)
+
+                    local descriptionHtml = ''
+                    local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
+                    if task.description then
+                        local jsonDesc = utils.jsonEncodeString(task.description)
+                        local jsonSubj = utils.jsonEncodeString(task.subject)
+                        descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
+                    end
+
+                    local blocked = ""
+                    if task.blockedBy and #task.blockedBy > 0 then
+                        blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
+                    end
+
+                    local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
+                    local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
+
+                    html = html .. '                <div class="task"' .. opacityStyle
+                        .. ' data-task-id="' .. utils.escapeHtml(tostring(task.id))
+                        .. '" data-session-id="' .. utils.escapeHtml(task._sessionId) .. '">\n'
+                    html = html .. '                    <span class="task-icon ' .. statusClass .. '">' .. statusIcon .. '</span>\n'
+                    html = html .. '                    <div class="task-content">\n'
+                    html = html .. '                        <div class="task-subject">' .. utils.escapeHtml(task.subject) .. '</div>\n'
+                    if descriptionHtml ~= '' then
+                        html = html .. '                        ' .. descriptionHtml .. '\n'
+                    end
+                    html = html .. '                        <div class="task-meta">#' .. utils.escapeHtml(tostring(task.id))
+                        .. ' <span class="session-badge" title="' .. utils.escapeHtml(task._sessionId) .. '">'
+                        .. utils.escapeHtml(task._sessionId) .. '</span>' .. ownerHtml .. '</div>\n'
+                    if metadataHtml ~= '' then
+                        html = html .. '                        <div class="task-meta">' .. metadataHtml .. '</div>\n'
+                    end
+                    html = html .. '                        ' .. blocked .. launchBtn .. '\n'
+                    html = html .. '                    </div>\n'
+                    html = html .. '                </div>\n'
+                end
+            end
+
+            if completedTotal > 5 then
+                html = html .. '                <div class="task-meta" style="text-align: center; padding: 8px; color: #555;">+ '
+                    .. (completedTotal - 5) .. ' more completed</div>\n'
+            end
+
+            html = html .. '            </div>\n'
+            html = html .. '        </div>\n'
+        end
+    else
+        html = html .. '        <div class="memory-empty">No projects found.</div>\n'
     end
     html = html .. '    </div>\n'
 
