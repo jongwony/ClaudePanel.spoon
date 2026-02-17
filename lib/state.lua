@@ -7,7 +7,8 @@ local M = {}
 function M.loadState(configPath, utils, log)
     local state = {
         currentTaskListId = nil,
-        lastUpdateCheck = nil
+        lastUpdateCheck = nil,
+        cwdCache = {}
     }
     local f = io.open(configPath, "r")
     if f then
@@ -17,6 +18,7 @@ function M.loadState(configPath, utils, log)
         if data then
             state.currentTaskListId = data.currentTaskListId
             state.lastUpdateCheck = data.lastUpdateCheck
+            state.cwdCache = data.cwdCache or {}
             log("State loaded: " .. (data.currentTaskListId or "nil"))
         end
     end
@@ -27,7 +29,8 @@ end
 function M.saveState(configPath, state, log)
     local data = hs.json.encode({
         currentTaskListId = state.currentTaskListId,
-        lastUpdateCheck = state.lastUpdateCheck
+        lastUpdateCheck = state.lastUpdateCheck,
+        cwdCache = state.cwdCache
     })
     local f = io.open(configPath, "w")
     if f then

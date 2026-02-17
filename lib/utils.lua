@@ -27,12 +27,12 @@ end
 -- List directory contents
 function M.listDir(path)
     local items = {}
-    local handle = io.popen('ls -1 "' .. path .. '" 2>/dev/null')
-    if handle then
-        for line in handle:lines() do
-            table.insert(items, line)
+    local iter, dir = hs.fs.dir(path)
+    if not iter then return items end
+    for entry in iter, dir do
+        if entry ~= "." and entry ~= ".." then
+            table.insert(items, entry)
         end
-        handle:close()
     end
     return items
 end
