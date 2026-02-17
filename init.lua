@@ -85,7 +85,7 @@ local function saveState()
 end
 
 local memoryCache = { data = {}, sessionId = nil }
-local currentMode = 'session' -- tracks JS mode state for refresh persistence
+local currentMode = 'search' -- tracks JS mode state for refresh persistence
 local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
 local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
 
@@ -240,6 +240,9 @@ end
 
 function obj:show()
     webviewModule.createWebView(obj.config, actionHandler, log)
+    if currentMode == 'search' or currentMode == 'cwd' then
+        obj.config.taskListId = nil
+    end
     refreshWebView()
     webviewModule.show(log)
     watcher.startPathWatcher(utils.getTasksDir(), obj.config, utils, log, watcherCallback)
