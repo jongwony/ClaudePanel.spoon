@@ -1,0 +1,9 @@
+{
+  "name": "task-workflow",
+  "description": "Task lifecycle management: save conversation context as tasks and execute pending tasks sequentially",
+  "version": "1.5.0",
+  "author": {
+    "name": "Jongwon Choi",
+    "url": "https://github.com/jongwony"
+  }
+}
