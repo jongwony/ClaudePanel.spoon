@@ -7,8 +7,8 @@
   },
   "plugins": [
     {
-      "name": "task-save",
-      "source": "./task-save"
+      "name": "task-workflow",
+      "source": "./task-workflow"
     }
   ]
 }
