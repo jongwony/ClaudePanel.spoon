@@ -59,21 +59,30 @@ function M.generateLaunchBtn(task, utils, fallbackCwd)
     elseif task._cwd then
         return '<button class="task-launch-btn" onclick="launchClaudeWithCwd(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(task._cwd) .. '\')" title="Launch in ' .. utils.escapeHtml(task._cwd) .. '">▶</button>'
     elseif fallbackCwd then
-        return '<button class="task-launch-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(fallbackCwd) .. '\')" title="Launch in team cwd: ' .. utils.escapeHtml(fallbackCwd) .. '">▶</button>'
+        return '<button class="task-launch-btn task-handoff-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(fallbackCwd) .. '\')" title="Launch in team cwd: ' .. utils.escapeHtml(fallbackCwd) .. '">⤴</button>'
     else
         return '<button class="task-launch-btn" onclick="launchClaudeWithSession(\'' .. utils.escapeHtml(task._sessionId) .. '\')" title="Launch with session">▶</button>'
     end
 end
 
 -- Generate cwd display for a task (handles handoff target_cwd)
-function M.generateCwdDisplay(task, utils)
+function M.generateCwdDisplay(task, utils, fallbackCwd)
     local cwd = task._cwd
     local isHandoff = task.metadata and task.metadata.handoff and task.metadata.target_cwd
+    local isTeamCwd = false
     if isHandoff then
         cwd = task.metadata.target_cwd
+    elseif not cwd and fallbackCwd then
+        cwd = fallbackCwd
+        isTeamCwd = true
     end
     if not cwd then return '' end
-    local prefix = isHandoff and '<span style="color:#8b5cf6">&#x2934; </span>' or ''
+    local prefix = ''
+    if isHandoff then
+        prefix = '<span style="color:#8b5cf6">&#x2934; </span>'
+    elseif isTeamCwd then
+        prefix = '<span style="color:#8b5cf6">&#x2934; </span>'
+    end
     return '<div class="cwd-path" title="' .. utils.escapeHtml(cwd) .. '">' .. prefix .. utils.escapeHtml(cwd) .. '</div>'
 end
 
@@ -153,7 +162,7 @@ function M.generateTaskCard(task, utils, options)
     end
 
     local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
-    local cwdHtml = showCwd and M.generateCwdDisplay(task, utils) or ''
+    local cwdHtml = showCwd and M.generateCwdDisplay(task, utils, teamContext and teamContext.cwd) or ''
 
     local h = '<div class="task"' .. opacityStyle
         .. ' data-task-id="' .. utils.escapeHtml(tostring(task.id))
