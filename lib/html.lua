@@ -52,12 +52,14 @@ function M.generateMetadataBadges(metadata, utils)
 end
 
 -- Generate launch button for a task (handles handoff metadata)
-function M.generateLaunchBtn(task, utils)
+function M.generateLaunchBtn(task, utils, fallbackCwd)
     if task.metadata and task.metadata.handoff and task.metadata.target_cwd then
         local cwd = task.metadata.target_cwd
         return '<button class="task-launch-btn task-handoff-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(cwd) .. '\')" title="Handoff to ' .. utils.escapeHtml(cwd) .. '">⤴</button>'
     elseif task._cwd then
         return '<button class="task-launch-btn" onclick="launchClaudeWithCwd(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(task._cwd) .. '\')" title="Launch in ' .. utils.escapeHtml(task._cwd) .. '">▶</button>'
+    elseif fallbackCwd then
+        return '<button class="task-launch-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(fallbackCwd) .. '\')" title="Launch in team cwd: ' .. utils.escapeHtml(fallbackCwd) .. '">▶</button>'
     else
         return '<button class="task-launch-btn" onclick="launchClaudeWithSession(\'' .. utils.escapeHtml(task._sessionId) .. '\')" title="Launch with session">▶</button>'
     end
@@ -75,8 +77,122 @@ function M.generateCwdDisplay(task, utils)
     return '<div class="cwd-path" title="' .. utils.escapeHtml(cwd) .. '">' .. prefix .. utils.escapeHtml(cwd) .. '</div>'
 end
 
+-- Generate team header banner HTML
+-- teamData: {name, description, cwd, members, memberColorMap} or nil
+-- Returns '' when teamData is nil (non-team session)
+function M.generateTeamHeader(teamData, utils)
+    if not teamData then return '' end
+
+    local memberCount = #(teamData.members or {})
+    local h = '<div class="team-header">\n'
+    h = h .. '    <div class="team-header-title" onclick="toggleTeamHeader(this)">\n'
+    h = h .. '        <span class="team-header-toggle">▶</span>\n'
+    h = h .. '        <span class="team-header-name">' .. utils.escapeHtml(teamData.name) .. '</span>\n'
+    h = h .. '        <span class="team-header-count">' .. memberCount .. ' members</span>\n'
+    h = h .. '    </div>\n'
+    h = h .. '    <div class="team-header-body">\n'
+    if teamData.description then
+        h = h .. '        <div class="team-description">' .. utils.escapeHtml(teamData.description) .. '</div>\n'
+    end
+    h = h .. '        <div class="team-members">\n'
+    for _, m in ipairs(teamData.members or {}) do
+        local cssColor = (teamData.memberColorMap and m.name and teamData.memberColorMap[m.name]) or '#888'
+        h = h .. '            <div class="team-member">'
+            .. '<span class="team-member-dot" style="background:' .. cssColor .. '"></span>'
+            .. utils.escapeHtml(m.name or '') .. '</div>\n'
+    end
+    h = h .. '        </div>\n'
+    if teamData.cwd then
+        h = h .. '        <div class="team-cwd">' .. utils.escapeHtml(teamData.cwd) .. '</div>\n'
+    end
+    h = h .. '    </div>\n'
+    h = h .. '</div>\n'
+    return h
+end
+
+-- Generate HTML for a single task card
+-- options:
+--   showBlocked: bool (default true) -- show blockedBy info
+--   showCwd: bool (default true) -- show CWD path
+--   opacity: bool (default false) -- apply opacity:0.6 style
+--   teamContext: table|nil -- {memberColorMap: {ownerName -> colorHex}}
+function M.generateTaskCard(task, utils, options)
+    local opts = options or {}
+    local showBlocked = opts.showBlocked ~= false
+    local showCwd = opts.showCwd ~= false
+    local opacity = opts.opacity or false
+    local teamContext = opts.teamContext
+
+    local statusClass = "status-" .. (task.status or "pending")
+    local statusIcon = M.getStatusIcon(task.status)
+    local opacityStyle = opacity and ' style="opacity: 0.6;"' or ''
+
+    local blocked = ""
+    if showBlocked and task.blockedBy and #task.blockedBy > 0 then
+        blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
+    end
+
+    local launchBtn = M.generateLaunchBtn(task, utils, teamContext and teamContext.cwd)
+
+    local descriptionHtml = ''
+    local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
+    if task.description then
+        local jsonDesc = utils.jsonEncodeString(task.description)
+        local jsonSubj = utils.jsonEncodeString(task.subject)
+        descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
+    end
+
+    local ownerHtml = ''
+    if task.owner then
+        local color = teamContext and teamContext.memberColorMap and teamContext.memberColorMap[task.owner]
+        if color then
+            ownerHtml = ' <span class="owner-badge" style="background:' .. color .. ';color:#fff">' .. utils.escapeHtml(task.owner) .. '</span>'
+        else
+            ownerHtml = ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>'
+        end
+    end
+
+    local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
+    local cwdHtml = showCwd and M.generateCwdDisplay(task, utils) or ''
+
+    local h = '<div class="task"' .. opacityStyle
+        .. ' data-task-id="' .. utils.escapeHtml(tostring(task.id))
+        .. '" data-session-id="' .. utils.escapeHtml(task._sessionId) .. '">\n'
+    h = h .. '    <span class="task-icon ' .. statusClass .. '">' .. statusIcon .. '</span>\n'
+    h = h .. '    <div class="task-content">\n'
+    h = h .. '        <div class="task-subject">' .. utils.escapeHtml(task.subject) .. '</div>\n'
+    if descriptionHtml ~= '' then
+        h = h .. '        ' .. descriptionHtml .. '\n'
+    end
+    h = h .. '        <div class="task-meta">#' .. utils.escapeHtml(tostring(task.id))
+        .. ' <span class="session-badge" title="' .. utils.escapeHtml(task._sessionId) .. '">'
+        .. utils.escapeHtml(task._sessionId) .. '</span>' .. ownerHtml .. '</div>\n'
+    if metadataHtml ~= '' then
+        h = h .. '        <div class="task-meta">' .. metadataHtml .. '</div>\n'
+    end
+    if cwdHtml ~= '' then
+        h = h .. '        ' .. cwdHtml .. '\n'
+    end
+    h = h .. '        ' .. blocked .. launchBtn .. '\n'
+    h = h .. '    </div>\n'
+    h = h .. '</div>\n'
+
+    return h
+end
+
 -- Generate full HTML for task viewer
-function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, memoryData, currentMode, cwdGroups, cwdCollapseState)
+function M.generateHTML(opts)
+    local tasks = opts.tasks
+    local sessions = opts.sessions
+    local currentSessionValue = opts.currentSessionValue
+    local utils = opts.utils
+    local config = opts.config
+    local memoryData = opts.memoryData
+    local currentMode = opts.currentMode
+    local cwdGroups = opts.cwdGroups
+    local cwdCollapseState = opts.cwdCollapseState
+    local teamData = opts.teamData
+
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
@@ -91,8 +207,20 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         end
     end
 
-    -- Session datalist options
+    -- Session datalist options (named teams first, then regular sessions)
     local sessionOptions = ''
+    local namedTeams = opts.namedTeams or {}
+    for _, team in ipairs(namedTeams) do
+        local label = team.name
+        if team.description then
+            label = label .. ' -- ' .. team.description:sub(1, 40)
+        end
+        sessionOptions = sessionOptions .. string.format(
+            '                    <option value="%s">%s</option>\n',
+            utils.escapeHtml(team.name),
+            utils.escapeHtml(label)
+        )
+    end
     for _, sessionId in ipairs(sessions) do
         sessionOptions = sessionOptions .. string.format(
             '                    <option value="%s"></option>\n',
@@ -374,6 +502,43 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             border-radius: 4px;
             color: #60a5fa;
         }
+        .team-header {
+            background: rgba(139, 92, 246, 0.08);
+            border: 1px solid rgba(139, 92, 246, 0.2);
+            border-radius: 6px;
+            padding: 8px 10px;
+            margin: 4px 0 8px 0;
+            font-size: 11px;
+        }
+        .team-header-title {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+            cursor: pointer;
+            user-select: none;
+        }
+        .team-header-toggle { color: #8b5cf6; font-size: 10px; }
+        .team-header-name { font-weight: 600; color: #a78bfa; }
+        .team-header-count { color: #888; }
+        .team-header-body { margin-top: 6px; display: none; }
+        .team-header-body.expanded { display: block; }
+        .team-description { color: #aaa; margin-bottom: 4px; }
+        .team-members { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 4px; }
+        .team-member {
+            display: flex;
+            align-items: center;
+            gap: 3px;
+            font-size: 10px;
+            color: #aaa;
+        }
+        .team-member-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            flex-shrink: 0;
+            background: #888;
+        }
+        .team-cwd { font-size: 10px; color: #666; word-break: break-all; }
         .metadata-badge {
             font-size: 10px;
             background: rgba(168, 85, 247, 0.2);
@@ -1150,6 +1315,15 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
             });
         }
 
+        function toggleTeamHeader(titleEl) {
+            var body = titleEl.parentElement.querySelector('.team-header-body');
+            var toggle = titleEl.querySelector('.team-header-toggle');
+            if (body) {
+                body.classList.toggle('expanded');
+                if (toggle) toggle.textContent = body.classList.contains('expanded') ? '▼' : '▶';
+            }
+        }
+
         function getVisibleCwdTasks() {
             var cwdList = document.getElementById('cwdList');
             if (!cwdList) return [];
@@ -1530,6 +1704,9 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
 ]]
 
     html = html .. '    <div id="taskSections">\n'
+    html = html .. M.generateTeamHeader(teamData, utils)
+
+    local teamContext = teamData and {memberColorMap = teamData.memberColorMap, cwd = teamData.cwd}
 
     -- In Progress section
     if #inProgressTasks > 0 then
@@ -1538,35 +1715,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         <div class="section-header" data-section="in_progress" data-total="]] .. #inProgressTasks .. [[">In Progress (]] .. #inProgressTasks .. [[)</div>
 ]]
         for _, task in ipairs(inProgressTasks) do
-            local blocked = ""
-            if task.blockedBy and #task.blockedBy > 0 then
-                blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
-            end
-            local launchBtn = M.generateLaunchBtn(task, utils)
-            local descriptionHtml = ''
-            local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
-            if task.description then
-                local jsonDesc = utils.jsonEncodeString(task.description)
-                local jsonSubj = utils.jsonEncodeString(task.subject)
-                descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
-            end
-            local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
-            local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
-            html = html .. [[
-        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[">
-            <span class="task-icon status-in_progress">]] .. M.getStatusIcon("in_progress") .. [[</span>
-            <div class="task-content">
-                <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
-                ]] .. descriptionHtml .. [[
-                <div class="task-meta">
-                    #]] .. utils.escapeHtml(tostring(task.id)) .. [[ <span class="session-badge" title="]] .. utils.escapeHtml(task._sessionId) .. [[">]] .. utils.escapeHtml(task._sessionId) .. [[</span>]] .. ownerHtml .. [[
-                </div>
-                ]] .. (metadataHtml ~= '' and '<div class="task-meta">' .. metadataHtml .. '</div>' or '') .. [[
-                ]] .. M.generateCwdDisplay(task, utils) .. [[
-                ]] .. blocked .. launchBtn .. [[
-            </div>
-        </div>
-]]
+            html = html .. M.generateTaskCard(task, utils, {teamContext = teamContext})
         end
         html = html .. "    </div>\n"
     end
@@ -1578,35 +1727,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
         <div class="section-header" data-section="pending" data-total="]] .. #pendingTasks .. [[">Pending (]] .. #pendingTasks .. [[)</div>
 ]]
         for _, task in ipairs(pendingTasks) do
-            local blocked = ""
-            if task.blockedBy and #task.blockedBy > 0 then
-                blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
-            end
-            local launchBtn = M.generateLaunchBtn(task, utils)
-            local descriptionHtml = ''
-            local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
-            if task.description then
-                local jsonDesc = utils.jsonEncodeString(task.description)
-                local jsonSubj = utils.jsonEncodeString(task.subject)
-                descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
-            end
-            local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
-            local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
-            html = html .. [[
-        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[">
-            <span class="task-icon status-pending">]] .. M.getStatusIcon("pending") .. [[</span>
-            <div class="task-content">
-                <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
-                ]] .. descriptionHtml .. [[
-                <div class="task-meta">
-                    #]] .. utils.escapeHtml(tostring(task.id)) .. [[ <span class="session-badge" title="]] .. utils.escapeHtml(task._sessionId) .. [[">]] .. utils.escapeHtml(task._sessionId) .. [[</span>]] .. ownerHtml .. [[
-                </div>
-                ]] .. (metadataHtml ~= '' and '<div class="task-meta">' .. metadataHtml .. '</div>' or '') .. [[
-                ]] .. M.generateCwdDisplay(task, utils) .. [[
-                ]] .. blocked .. launchBtn .. [[
-            </div>
-        </div>
-]]
+            html = html .. M.generateTaskCard(task, utils, {teamContext = teamContext})
         end
         html = html .. "    </div>\n"
     end
@@ -1620,30 +1741,7 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
 ]]
         for i = 1, displayCount do
             local task = completedTasks[i]
-            local launchBtn = M.generateLaunchBtn(task, utils)
-            local descriptionHtml = ''
-            local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
-            if task.description then
-                local jsonDesc = utils.jsonEncodeString(task.description)
-                local jsonSubj = utils.jsonEncodeString(task.subject)
-                descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
-            end
-            local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
-            local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
-            html = html .. [[
-        <div class="task" data-task-id="]] .. utils.escapeHtml(tostring(task.id)) .. [[" data-session-id="]] .. utils.escapeHtml(task._sessionId) .. [[" style="opacity: 0.6;">
-            <span class="task-icon status-completed">]] .. M.getStatusIcon("completed") .. [[</span>
-            <div class="task-content">
-                <div class="task-subject">]] .. utils.escapeHtml(task.subject) .. [[</div>
-                ]] .. descriptionHtml .. [[
-                <div class="task-meta">
-                    #]] .. utils.escapeHtml(tostring(task.id)) .. [[ <span class="session-badge" title="]] .. utils.escapeHtml(task._sessionId) .. [[">]] .. utils.escapeHtml(task._sessionId) .. [[</span>]] .. ownerHtml .. [[
-                </div>
-                ]] .. (metadataHtml ~= '' and '<div class="task-meta">' .. metadataHtml .. '</div>' or '') .. [[
-                ]] .. M.generateCwdDisplay(task, utils) .. launchBtn .. [[
-            </div>
-        </div>
-]]
+            html = html .. M.generateTaskCard(task, utils, {opacity = true, showBlocked = false, teamContext = teamContext})
         end
         if #completedTasks > displayCount then
             html = html .. [[
@@ -1750,45 +1848,11 @@ function M.generateHTML(tasks, sessions, currentSessionValue, utils, config, mem
                 end
 
                 if not skip then
-                    local statusClass = "status-" .. (task.status or "pending")
-                    local statusIcon = M.getStatusIcon(task.status)
-                    local opacityStyle = task.status == "completed" and ' style="opacity: 0.6;"' or ''
-                    local launchBtn = M.generateLaunchBtn(task, utils)
-
-                    local descriptionHtml = ''
-                    local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
-                    if task.description then
-                        local jsonDesc = utils.jsonEncodeString(task.description)
-                        local jsonSubj = utils.jsonEncodeString(task.subject)
-                        descriptionHtml = "<div class='task-description' onclick='showTaskDetail(" .. jsonSubj .. ", " .. jsonDesc .. ", " .. jsonMeta .. ")' title='Click to view full description'>" .. utils.escapeHtml(task.description) .. "</div>"
-                    end
-
-                    local blocked = ""
-                    if task.blockedBy and #task.blockedBy > 0 then
-                        blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
-                    end
-
-                    local ownerHtml = task.owner and ' <span class="owner-badge">' .. utils.escapeHtml(task.owner) .. '</span>' or ''
-                    local metadataHtml = M.generateMetadataBadges(task.metadata, utils)
-
-                    html = html .. '                <div class="task"' .. opacityStyle
-                        .. ' data-task-id="' .. utils.escapeHtml(tostring(task.id))
-                        .. '" data-session-id="' .. utils.escapeHtml(task._sessionId) .. '">\n'
-                    html = html .. '                    <span class="task-icon ' .. statusClass .. '">' .. statusIcon .. '</span>\n'
-                    html = html .. '                    <div class="task-content">\n'
-                    html = html .. '                        <div class="task-subject">' .. utils.escapeHtml(task.subject) .. '</div>\n'
-                    if descriptionHtml ~= '' then
-                        html = html .. '                        ' .. descriptionHtml .. '\n'
-                    end
-                    html = html .. '                        <div class="task-meta">#' .. utils.escapeHtml(tostring(task.id))
-                        .. ' <span class="session-badge" title="' .. utils.escapeHtml(task._sessionId) .. '">'
-                        .. utils.escapeHtml(task._sessionId) .. '</span>' .. ownerHtml .. '</div>\n'
-                    if metadataHtml ~= '' then
-                        html = html .. '                        <div class="task-meta">' .. metadataHtml .. '</div>\n'
-                    end
-                    html = html .. '                        ' .. blocked .. launchBtn .. '\n'
-                    html = html .. '                    </div>\n'
-                    html = html .. '                </div>\n'
+                    html = html .. M.generateTaskCard(task, utils, {
+                        showCwd = false,
+                        opacity = task.status == "completed",
+                        teamContext = teamContext,
+                    })
                 end
             end
 
