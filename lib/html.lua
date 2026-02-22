@@ -52,12 +52,14 @@ function M.generateMetadataBadges(metadata, utils)
 end
 
 -- Generate launch button for a task (handles handoff metadata)
-function M.generateLaunchBtn(task, utils)
+function M.generateLaunchBtn(task, utils, fallbackCwd)
     if task.metadata and task.metadata.handoff and task.metadata.target_cwd then
         local cwd = task.metadata.target_cwd
         return '<button class="task-launch-btn task-handoff-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(cwd) .. '\')" title="Handoff to ' .. utils.escapeHtml(cwd) .. '">⤴</button>'
     elseif task._cwd then
         return '<button class="task-launch-btn" onclick="launchClaudeWithCwd(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(task._cwd) .. '\')" title="Launch in ' .. utils.escapeHtml(task._cwd) .. '">▶</button>'
+    elseif fallbackCwd then
+        return '<button class="task-launch-btn" onclick="launchClaudeHandoff(\'' .. utils.escapeHtml(task._sessionId) .. '\', \'' .. utils.escapeHtml(fallbackCwd) .. '\')" title="Launch in team cwd: ' .. utils.escapeHtml(fallbackCwd) .. '">▶</button>'
     else
         return '<button class="task-launch-btn" onclick="launchClaudeWithSession(\'' .. utils.escapeHtml(task._sessionId) .. '\')" title="Launch with session">▶</button>'
     end
@@ -130,7 +132,7 @@ function M.generateTaskCard(task, utils, options)
         blocked = '<div class="task-blocked">Blocked by: ' .. table.concat(task.blockedBy, ", ") .. '</div>'
     end
 
-    local launchBtn = M.generateLaunchBtn(task, utils)
+    local launchBtn = M.generateLaunchBtn(task, utils, teamContext and teamContext.cwd)
 
     local descriptionHtml = ''
     local jsonMeta = task.metadata and hs.json.encode(task.metadata) or '{}'
@@ -1704,7 +1706,7 @@ function M.generateHTML(opts)
     html = html .. '    <div id="taskSections">\n'
     html = html .. M.generateTeamHeader(teamData, utils)
 
-    local teamContext = teamData and {memberColorMap = teamData.memberColorMap}
+    local teamContext = teamData and {memberColorMap = teamData.memberColorMap, cwd = teamData.cwd}
 
     -- In Progress section
     if #inProgressTasks > 0 then
