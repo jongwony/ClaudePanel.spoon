@@ -33,6 +33,7 @@ local updater = loadModule("updater")
 local watcher = loadModule("watcher")
 local webviewModule = loadModule("webview")
 local memoryModule = loadModule("memory")
+local teamsModule  = loadModule("teams")
 
 -- ============================================================================
 -- Configuration
@@ -85,6 +86,7 @@ local function saveState()
 end
 
 local memoryCache = { data = {}, sessionId = nil }
+local teamCache   = { data = nil, sessionId = nil }
 local currentMode = 'search' -- tracks JS mode state for refresh persistence
 local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
 local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
@@ -121,6 +123,23 @@ local function invalidateMemoryCache()
     memoryCache.sessionId = nil
 end
 
+local function getTeamData()
+    local sessionId = obj.state.currentTaskListId or ''
+    if teamCache.sessionId ~= sessionId then
+        local ok, data = pcall(teamsModule.loadTeamConfig, sessionId, utils, log)
+        teamCache.data = ok and data or nil
+        teamCache.sessionId = sessionId
+        if teamCache.data then
+            teamCache.data.memberColorMap = teamsModule.getMemberColorMap(teamCache.data)
+        end
+    end
+    return teamCache.data
+end
+
+local function invalidateTeamCache()
+    teamCache.sessionId = nil
+end
+
 local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
@@ -130,7 +149,19 @@ local function refreshWebView()
     if currentMode == 'cwd' then
         cwdGroups = tasks.groupTasksByCwd(allTasks)
     end
-    local htmlContent = html.generateHTML(allTasks, sessions, currentSessionValue, utils, obj.config, memoryData, currentMode, cwdGroups, cwdCollapseState)
+    local htmlContent = html.generateHTML({
+        tasks = allTasks,
+        sessions = sessions,
+        currentSessionValue = currentSessionValue,
+        utils = utils,
+        config = obj.config,
+        memoryData = memoryData,
+        currentMode = currentMode,
+        cwdGroups = cwdGroups,
+        cwdCollapseState = cwdCollapseState,
+        teamData = getTeamData(),
+        namedTeams = teamsModule.listNamedTeams(utils, log),
+    })
     webviewModule.refreshWebView(htmlContent, log)
 
     -- Persist CWD cache when it grows (new entries discovered)
@@ -273,6 +304,7 @@ function obj:setTaskListId(id)
     obj.state.currentTaskListId = sessionId
     obj.config.taskListId = sessionId
     invalidateMemoryCache()
+    invalidateTeamCache()
     saveState()
     log("Session changed to: " .. (sessionId or "none"))
 
