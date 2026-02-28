@@ -9,6 +9,8 @@ local usercontent = nil
 local detailWebview = nil
 local quickTaskWebview = nil
 local quickTaskUserContent = nil
+local snoozeWebview = nil
+local snoozeUserContent = nil
 local isVisible = false
 local isOverlayMode = false
 
@@ -677,6 +679,356 @@ function M.closeQuickTaskDialog()
     end
 end
 
+-- Show Snooze dialog
+function M.showSnoozeDialog(actionHandler, taskId, sessionId, subject, utils, log)
+    -- Close existing dialog
+    if snoozeWebview then
+        snoozeWebview:delete()
+        snoozeWebview = nil
+    end
+
+    local screen = hs.screen.mainScreen()
+    local frame = screen:frame()
+
+    local width = 480
+    local height = 380
+    local rect = hs.geometry.rect(
+        frame.x + (frame.w - width) / 2,
+        frame.y + (frame.h - height) / 2,
+        width,
+        height
+    )
+
+    local escapedSubject = utils.escapeHtml(subject or "")
+    local escapedTaskId = utils.escapeHtml(taskId or "")
+    local escapedSessionId = utils.escapeHtml(sessionId or "")
+    -- JS string context needs jsonEncodeString (escapes backslash, quotes)
+    local jsTaskId = utils.jsonEncodeString(taskId or "")
+    local jsSessionId = utils.jsonEncodeString(sessionId or "")
+    local jsSubject = utils.jsonEncodeString(subject or "")
+
+    local html = [[
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            background: rgba(26, 26, 46, 0.98);
+            color: #e5e5e5;
+            padding: 20px;
+            -webkit-font-smoothing: antialiased;
+        }
+        .header {
+            margin-bottom: 16px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        .title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #fff;
+            margin-bottom: 4px;
+        }
+        .task-subject {
+            font-size: 13px;
+            color: #888;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .input-group {
+            margin-bottom: 8px;
+            position: relative;
+        }
+        .input-label {
+            font-size: 12px;
+            color: #888;
+            margin-bottom: 6px;
+        }
+        .input-field {
+            width: 100%;
+            background: rgba(0, 0, 0, 0.3);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            color: #e5e5e5;
+            padding: 10px 12px;
+            border-radius: 6px;
+            font-size: 14px;
+            font-family: inherit;
+        }
+        .input-field:focus {
+            outline: none;
+            border-color: #06b6d4;
+        }
+        .input-field::placeholder {
+            color: #555;
+        }
+        .autocomplete {
+            display: none;
+            position: absolute;
+            left: 0;
+            right: 0;
+            top: 100%;
+            margin-top: 4px;
+            background: rgba(20, 20, 40, 0.98);
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            border-radius: 6px;
+            overflow: hidden;
+            z-index: 10;
+        }
+        .autocomplete.visible {
+            display: block;
+        }
+        .autocomplete-item {
+            padding: 10px 12px;
+            cursor: pointer;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        .autocomplete-item:hover,
+        .autocomplete-item.selected {
+            background: rgba(6, 182, 212, 0.15);
+        }
+        .ac-label {
+            font-weight: 500;
+            color: #e5e5e5;
+        }
+        .ac-time {
+            font-size: 12px;
+            color: #06b6d4;
+            font-family: "SF Mono", Menlo, monospace;
+        }
+        .hint {
+            font-size: 12px;
+            color: #555;
+            margin-top: 12px;
+            line-height: 1.6;
+        }
+        .hint kbd {
+            background: rgba(255, 255, 255, 0.1);
+            padding: 1px 5px;
+            border-radius: 3px;
+            font-family: "SF Mono", Menlo, monospace;
+            font-size: 11px;
+        }
+        .actions {
+            display: flex;
+            justify-content: flex-end;
+            gap: 10px;
+            margin-top: 16px;
+        }
+        .btn {
+            padding: 8px 20px;
+            border-radius: 6px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            border: none;
+        }
+        .btn-cancel {
+            background: rgba(255, 255, 255, 0.1);
+            color: #aaa;
+        }
+        .btn-cancel:hover {
+            background: rgba(255, 255, 255, 0.15);
+        }
+        .btn-primary {
+            background: #06b6d4;
+            color: #fff;
+        }
+        .btn-primary:hover {
+            background: #0891b2;
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <div class="title">Snooze Task</div>
+        <div class="task-subject">]] .. escapedSubject .. [[</div>
+    </div>
+
+    <div class="input-group">
+        <div class="input-label">Snooze until</div>
+        <input type="text" class="input-field" id="snoozeInput"
+               placeholder="e.g., 2h, tomorrow, next week" autofocus>
+        <div class="autocomplete" id="autocomplete"></div>
+    </div>
+
+    <div class="hint">
+        Try: <kbd>30m</kbd> <kbd>2h</kbd> <kbd>1d</kbd> <kbd>1w</kbd> <kbd>tomorrow</kbd> <kbd>next week</kbd> <kbd>tonight</kbd> <kbd>afternoon</kbd><br>
+        Or type a natural description for AI parsing.
+    </div>
+
+    <div class="actions">
+        <button class="btn btn-cancel" onclick="closeDialog()">Cancel</button>
+        <button class="btn btn-primary" onclick="submitSnooze()">Snooze</button>
+    </div>
+
+    <script>
+        var TASK_ID = ]] .. jsTaskId .. [[;
+        var SESSION_ID = ]] .. jsSessionId .. [[;
+        var SUBJECT = ]] .. jsSubject .. [[;
+
+        function pad(n) { return String(n).padStart(2, '0'); }
+        function toISO(d) {
+            var off = -d.getTimezoneOffset();
+            var sign = off >= 0 ? '+' : '-';
+            var h = pad(Math.floor(Math.abs(off)/60));
+            var m = pad(Math.abs(off)%60);
+            return d.getFullYear()+'-'+pad(d.getMonth()+1)+'-'+pad(d.getDate())+'T'+
+                   pad(d.getHours())+':'+pad(d.getMinutes())+':'+pad(d.getSeconds())+sign+h+':'+m;
+        }
+        function addHours(n) { var d = new Date(); d.setHours(d.getHours()+n); return d; }
+        function addMinutes(n) { var d = new Date(); d.setMinutes(d.getMinutes()+n); return d; }
+        function addDays(n) { var d = new Date(); d.setDate(d.getDate()+n); return d; }
+        function addWeeks(n) { return addDays(n*7); }
+        function addMonths(n) { var d = new Date(); d.setMonth(d.getMonth()+n); return d; }
+        function tomorrowAt9() { var d = new Date(); d.setDate(d.getDate()+1); d.setHours(9,0,0,0); return d; }
+        function nextMondayAt9() {
+            var d = new Date();
+            var day = d.getDay();
+            var daysUntilMon = day === 0 ? 1 : (8 - day);
+            d.setDate(d.getDate()+daysUntilMon);
+            d.setHours(9,0,0,0);
+            return d;
+        }
+        function todayAt(h,m) { var d = new Date(); d.setHours(h,m,0,0); return d; }
+
+        var PRESETS = [
+            { pattern: /^(\d+)\s*h/i, fn: function(m) { return addHours(+m[1]); }, label: function(m) { return m[1]+' hour(s)'; } },
+            { pattern: /^(\d+)\s*m(?:in|$)/i, fn: function(m) { return addMinutes(+m[1]); }, label: function(m) { return m[1]+' minute(s)'; } },
+            { pattern: /^(\d+)\s*mo/i, fn: function(m) { return addMonths(+m[1]); }, label: function(m) { return m[1]+' month(s)'; } },
+            { pattern: /^(\d+)\s*d/i, fn: function(m) { return addDays(+m[1]); }, label: function(m) { return m[1]+' day(s)'; } },
+            { pattern: /^(\d+)\s*w/i, fn: function(m) { return addWeeks(+m[1]); }, label: function(m) { return m[1]+' week(s)'; } },
+            { pattern: /^(tomorrow)$/i, fn: function() { return tomorrowAt9(); }, label: function() { return 'Tomorrow 9:00 AM'; } },
+            { pattern: /^(next\s*week)$/i, fn: function() { return nextMondayAt9(); }, label: function() { return 'Next Monday 9:00 AM'; } },
+            { pattern: /^(tonight)$/i, fn: function() { return todayAt(21,0); }, label: function() { return 'Tonight 9:00 PM'; } },
+            { pattern: /^(afternoon)$/i, fn: function() { return todayAt(14,0); }, label: function() { return 'Today 2:00 PM'; } },
+            { pattern: /^(\uB0B4\uC77C)$/i, fn: function() { return tomorrowAt9(); }, label: function() { return '\uB0B4\uC77C 9:00 AM'; } },
+            { pattern: /^(\uB2E4\uC74C\s*\uC8FC)$/i, fn: function() { return nextMondayAt9(); }, label: function() { return '\uB2E4\uC74C \uC8FC \uC6D4\uC694\uC77C 9:00 AM'; } },
+            { pattern: /^(\uC624\uB298\s*\uBC24)$/i, fn: function() { return todayAt(21,0); }, label: function() { return '\uC624\uB298 \uBC24 9:00 PM'; } },
+            { pattern: /^(\uC624\uD6C4)$/i, fn: function() { return todayAt(14,0); }, label: function() { return '\uC624\uB298 \uC624\uD6C4 2:00 PM'; } },
+        ];
+
+        var currentMatch = null;
+        var selectedIndex = -1;
+
+        function updateAutocomplete() {
+            var input = document.getElementById('snoozeInput').value.trim();
+            var ac = document.getElementById('autocomplete');
+            currentMatch = null;
+            selectedIndex = -1;
+
+            if (!input) {
+                ac.classList.remove('visible');
+                return;
+            }
+
+            for (var i = 0; i < PRESETS.length; i++) {
+                var m = input.match(PRESETS[i].pattern);
+                if (m) {
+                    var resolvedDate = PRESETS[i].fn(m);
+                    var label = PRESETS[i].label(m);
+                    var timeStr = toISO(resolvedDate);
+                    currentMatch = { date: resolvedDate, label: label, iso: timeStr };
+                    selectedIndex = 0;
+                    ac.innerHTML = '<div class="autocomplete-item selected" onclick="selectPreset()">' +
+                        '<span class="ac-label">' + label + '</span>' +
+                        '<span class="ac-time">' + timeStr + '</span>' +
+                        '</div>';
+                    ac.classList.add('visible');
+                    return;
+                }
+            }
+
+            ac.classList.remove('visible');
+        }
+
+        function selectPreset() {
+            if (!currentMatch) return;
+            window.webkit.messageHandlers.snoozeBridge.postMessage({
+                action: 'submit',
+                isoTimestamp: currentMatch.iso,
+                taskId: TASK_ID,
+                sessionId: SESSION_ID,
+                subject: SUBJECT
+            });
+        }
+
+        function submitSnooze() {
+            if (currentMatch) {
+                selectPreset();
+                return;
+            }
+            var input = document.getElementById('snoozeInput').value.trim();
+            if (!input) return;
+            window.webkit.messageHandlers.snoozeBridge.postMessage({
+                action: 'submit',
+                input: input,
+                taskId: TASK_ID,
+                sessionId: SESSION_ID,
+                subject: SUBJECT
+            });
+        }
+
+        function closeDialog() {
+            window.webkit.messageHandlers.snoozeBridge.postMessage({ action: 'close' });
+        }
+
+        document.getElementById('snoozeInput').addEventListener('input', updateAutocomplete);
+
+        document.addEventListener('keydown', function(e) {
+            if (e.key === 'Escape') {
+                closeDialog();
+            }
+            if (e.key === 'Enter') {
+                e.preventDefault();
+                submitSnooze();
+            }
+        });
+
+        document.getElementById('snoozeInput').focus();
+    </script>
+</body>
+</html>
+]]
+
+    -- Create UserContent for Snooze (singleton pattern)
+    if not snoozeUserContent then
+        snoozeUserContent = hs.webview.usercontent.new("snoozeBridge")
+        snoozeUserContent:setCallback(function(msg)
+            log("Snooze message: " .. hs.json.encode(msg.body))
+            actionHandler(msg.body.action, msg.body)
+        end)
+    end
+
+    snoozeWebview = hs.webview.new(rect, {}, snoozeUserContent)
+    snoozeWebview:windowStyle({"titled", "closable", "utility", "HUD"})
+    snoozeWebview:level(hs.drawing.windowLevels.floating)
+    snoozeWebview:allowTextEntry(true)
+    snoozeWebview:shadow(true)
+    snoozeWebview:alpha(0.98)
+    snoozeWebview:windowTitle("Snooze Task")
+    snoozeWebview:html(html)
+    snoozeWebview:show()
+    snoozeWebview:bringToFront()
+
+    log("Snooze dialog opened for task: " .. (taskId or ""))
+end
+
+-- Close Snooze dialog
+function M.closeSnoozeDialog()
+    if snoozeWebview then
+        snoozeWebview:delete()
+        snoozeWebview = nil
+    end
+end
+
 -- Toggle overlay mode (semi-transparent passthrough)
 function M.toggleOverlay(log)
     if not webview then return false end
@@ -715,6 +1067,8 @@ function M.cleanup()
         quickTaskWebview:delete()
         quickTaskWebview = nil
     end
+    if snoozeWebview then snoozeWebview:delete(); snoozeWebview = nil end
+    if snoozeUserContent then snoozeUserContent = nil end
     usercontent = nil
     quickTaskUserContent = nil
     isVisible = false
