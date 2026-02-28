@@ -93,6 +93,7 @@ local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
 local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
 local snoozeTimer = nil
 local caffeineWatcher = nil
+local snoozeNotifiedKeys = {} -- track notified due items to avoid repeated notifications
 
 local function tableSize(t)
     local count = 0
@@ -193,15 +194,21 @@ local function checkSnoozeDue()
     end)
     if not ok then dueItems = {} end
     if #dueItems > 0 then
+        local newDue = false
         for _, item in ipairs(dueItems) do
-            local n = hs.notify.new(function() obj:show() end, {
-                title = "Task Due",
-                informativeText = item.subject or "Snoozed task is due",
-                withdrawAfter = 0,
-            })
-            n:send()
+            local key = item.key or snoozeModule.makeKey(item.sessionId, item.taskId)
+            if not snoozeNotifiedKeys[key] then
+                snoozeNotifiedKeys[key] = true
+                newDue = true
+                local n = hs.notify.new(function() obj:show() end, {
+                    title = "Task Due",
+                    informativeText = item.subject or "Snoozed task is due",
+                    withdrawAfter = 0,
+                })
+                n:send()
+            end
         end
-        refreshWebView()
+        if newDue then refreshWebView() end
     end
 end
 
@@ -633,6 +640,8 @@ function obj:snoozeTask(sessionId, taskId, subject, isoTimestamp)
         snoozeModule.add(obj.state.snoozePath, entry, utils, log)
     end)
     if ok then
+        local key = snoozeModule.makeKey(sessionId, taskId)
+        snoozeNotifiedKeys[key] = nil  -- clear so re-snooze can notify again when due
         hs.alert.show("Snoozed: " .. (subject or taskId))
     else
         hs.alert.show("Snooze failed: " .. tostring(err))
@@ -645,6 +654,7 @@ function obj:unsnoozeTask(key)
         snoozeModule.remove(obj.state.snoozePath, key, utils, log)
     end)
     if ok then
+        snoozeNotifiedKeys[key] = nil
         hs.alert.show("Unsnoozed")
     end
     refreshWebView()
