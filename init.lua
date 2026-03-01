@@ -34,6 +34,7 @@ local watcher = loadModule("watcher")
 local webviewModule = loadModule("webview")
 local memoryModule = loadModule("memory")
 local teamsModule  = loadModule("teams")
+local snoozeModule = loadModule("snooze")
 
 -- ============================================================================
 -- Configuration
@@ -90,6 +91,9 @@ local teamCache   = { data = nil, sessionId = nil }
 local currentMode = 'search' -- tracks JS mode state for refresh persistence
 local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
 local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
+local snoozeTimer = nil
+local caffeineWatcher = nil
+local snoozeNotifiedKeys = {} -- track notified due items to avoid repeated notifications
 
 local function tableSize(t)
     local count = 0
@@ -140,6 +144,17 @@ local function invalidateTeamCache()
     teamCache.sessionId = nil
 end
 
+local function getSnoozeData()
+    local ok, data = pcall(function()
+        return snoozeModule.list(obj.state.snoozePath, utils, log)
+    end)
+    if not ok then
+        log("Snooze data load failed: " .. tostring(data))
+        return {}
+    end
+    return data
+end
+
 local function refreshWebView()
     local allTasks = tasks.loadAllTasks(obj.config, utils, log)
     local sessions = stateModule.listSessionDirs(utils.getTasksDir(), utils)
@@ -161,6 +176,7 @@ local function refreshWebView()
         cwdCollapseState = cwdCollapseState,
         teamData = getTeamData(),
         namedTeams = teamsModule.listNamedTeams(utils, log),
+        snoozeData = getSnoozeData(),
     })
     webviewModule.refreshWebView(htmlContent, log)
 
@@ -174,6 +190,40 @@ local function refreshWebView()
     end
 
     log("WebView refreshed with " .. #allTasks .. " tasks")
+end
+
+local snoozeCheckFailCount = 0
+
+local function checkSnoozeDue()
+    local ok, dueItems = pcall(function()
+        return snoozeModule.checkDue(obj.state.snoozePath, utils, log)
+    end)
+    if not ok then
+        snoozeCheckFailCount = snoozeCheckFailCount + 1
+        log("checkSnoozeDue failed: " .. tostring(dueItems))
+        if snoozeCheckFailCount == 3 then
+            hs.alert.show("Snooze check error - see console", 3)
+        end
+        return
+    end
+    snoozeCheckFailCount = 0
+    if #dueItems > 0 then
+        local newDue = false
+        for _, item in ipairs(dueItems) do
+            local key = item.key or snoozeModule.makeKey(item.sessionId, item.taskId)
+            if not snoozeNotifiedKeys[key] then
+                snoozeNotifiedKeys[key] = true
+                newDue = true
+                local n = hs.notify.new(function() obj:show() end, {
+                    title = "Task Due",
+                    informativeText = item.subject or "Snoozed task is due",
+                    withdrawAfter = 0,
+                })
+                n:send()
+            end
+        end
+        if newDue then refreshWebView() end
+    end
 end
 
 -- ============================================================================
@@ -191,6 +241,8 @@ local function actionHandler(action, params)
             -- Restore current session scope
             obj.config.taskListId = obj.state.currentTaskListId
             invalidateMemoryCache()
+            refreshWebView()
+        elseif currentMode == 'snooze' then
             refreshWebView()
         else
             -- Restore current session scope
@@ -224,6 +276,14 @@ local function actionHandler(action, params)
             cwdCollapseState[params.cwd] = not cwdCollapseState[params.cwd] or nil
             refreshWebView()
         end
+    elseif action == "snoozeTask" then
+        obj:showSnoozeDialog(params.taskId, params.sessionId, params.subject)
+    elseif action == "unsnoozeTask" then
+        obj:unsnoozeTask(params.key)
+    elseif action == "dismissDueTask" then
+        obj:unsnoozeTask(params.key)
+    elseif action == "resnoozeTask" then
+        obj:showSnoozeDialog(params.taskId, params.sessionId, params.subject)
     else
         log("actionHandler: unrecognized action: " .. tostring(action))
     end
@@ -240,6 +300,19 @@ local function quickTaskActionHandler(action, params)
     end
 end
 
+local function snoozeDialogActionHandler(action, params)
+    if action == "close" then
+        webviewModule.closeSnoozeDialog()
+    elseif action == "submit" then
+        if params.isoTimestamp then
+            obj:snoozeTask(params.sessionId, params.taskId, params.subject, params.isoTimestamp)
+        elseif params.input then
+            obj:snoozeTaskWithParsing(params.sessionId, params.taskId, params.subject, params.input)
+        end
+        webviewModule.closeSnoozeDialog()
+    end
+end
+
 -- ============================================================================
 -- Public API
 -- ============================================================================
@@ -250,6 +323,7 @@ function obj:init()
     if not obj.config.keyBindings then
         obj.config.keyBindings = obj.defaultShortcuts
     end
+    obj.state.snoozePath = obj.spoonPath .. "/snooze.json"
     log("ClaudePanel Spoon initialized")
     return self
 end
@@ -461,6 +535,17 @@ function obj:deleteTask(taskId, sessionId)
     end
 
     log("deleteTask: Deleted " .. filepath)
+
+    -- Clean up any associated snooze entry
+    local snoozeKey = snoozeModule.makeKey(sessionId, taskId)
+    local snoozeOk, snoozeErr = pcall(function()
+        snoozeModule.remove(obj.state.snoozePath, snoozeKey, utils, log)
+    end)
+    if not snoozeOk then
+        log("deleteTask: snooze cleanup failed for " .. snoozeKey .. ": " .. tostring(snoozeErr))
+    end
+    snoozeNotifiedKeys[snoozeKey] = nil
+
     hs.alert.show("Task deleted", 1)
     obj:refresh()
     return true
@@ -562,6 +647,94 @@ end
 function obj:showQuickTaskDialog()
     webviewModule.showQuickTaskDialog(quickTaskActionHandler, log)
     return self
+end
+
+function obj:showSnoozeDialog(taskId, sessionId, subject)
+    webviewModule.showSnoozeDialog(snoozeDialogActionHandler, taskId, sessionId, subject, utils, log)
+end
+
+function obj:snoozeTask(sessionId, taskId, subject, isoTimestamp)
+    local entry = {
+        sessionId = sessionId,
+        taskId = taskId,
+        subject = subject,
+        snoozeUntil = isoTimestamp,
+        createdAt = snoozeModule.toISO(os.time()),
+    }
+    local ok, err = pcall(function()
+        snoozeModule.add(obj.state.snoozePath, entry, utils, log)
+    end)
+    if ok then
+        local key = snoozeModule.makeKey(sessionId, taskId)
+        snoozeNotifiedKeys[key] = nil  -- clear so re-snooze can notify again when due
+        hs.alert.show("Snoozed: " .. (subject or taskId))
+    else
+        hs.alert.show("Snooze failed: " .. tostring(err))
+    end
+    refreshWebView()
+end
+
+function obj:unsnoozeTask(key)
+    local ok, err = pcall(function()
+        snoozeModule.remove(obj.state.snoozePath, key, utils, log)
+    end)
+    if ok then
+        snoozeNotifiedKeys[key] = nil
+        hs.alert.show("Unsnoozed")
+    else
+        log("unsnoozeTask failed for key " .. tostring(key) .. ": " .. tostring(err))
+        hs.alert.show("Failed to unsnooze", 2)
+    end
+    refreshWebView()
+end
+
+function obj:snoozeTaskWithParsing(sessionId, taskId, subject, input)
+    local claudePath = discovery.discoverClaudePath(obj.config.claudePath)
+    if not claudePath then
+        hs.alert.show("Claude CLI not found")
+        return
+    end
+
+    local systemPrompt = string.format(
+        'You are a time parser. Given a natural language time expression, return ONLY an ISO 8601 timestamp with timezone offset. Current time: %s  Local offset: %s. Rules: tomorrow = next day 09:00 local, next week = next Mon 09:00 local, Nh = N hours from now, Nd = N days from now. Output ONLY the ISO string, nothing else. Example: 2026-02-28T09:00:00+09:00',
+        os.date("!%Y-%m-%dT%H:%M:%SZ"),
+        os.date("%z")
+    )
+
+    log("Snooze parse input: " .. input)
+
+    local task = hs.task.new(claudePath, function(exitCode, stdout, stderr)
+        if exitCode == 0 and stdout then
+            local isoStr = stdout:match("^%s*(.-)%s*$")
+            if isoStr and snoozeModule.parseISO(isoStr) then
+                obj:snoozeTask(sessionId, taskId, subject, isoStr)
+            else
+                hs.alert.show("Could not parse time: " .. (isoStr or "empty"))
+            end
+        else
+            hs.alert.show("Time parsing failed: " .. (stderr or "unknown error"))
+        end
+    end, {
+        "-p",
+        "--model", "haiku",
+        "--no-session-persistence",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--dangerously-skip-permissions",
+        "--setting-sources", "",
+        "--system-prompt", systemPrompt,
+        "--verbose",
+        "--",
+        input
+    })
+
+    if not task then
+        log("snoozeTaskWithParsing: hs.task.new returned nil for " .. claudePath)
+        hs.alert.show("Failed to start time parser", 2)
+        return
+    end
+
+    task:start()
 end
 
 function obj:launchClaudeWithTaskList()
@@ -757,6 +930,23 @@ function obj:start()
         end)
     end
 
+    -- Snooze timer (check every 60s)
+    if snoozeTimer then snoozeTimer:stop() end
+    snoozeTimer = hs.timer.doEvery(60, checkSnoozeDue)
+
+    -- Wake watcher
+    if caffeineWatcher then caffeineWatcher:stop() end
+    caffeineWatcher = hs.caffeinate.watcher.new(function(event)
+        if event == hs.caffeinate.watcher.systemDidWake then
+            log("Wake detected, checking snoozed tasks")
+            checkSnoozeDue()
+        end
+    end)
+    caffeineWatcher:start()
+
+    -- Initial check after 3s delay
+    hs.timer.doAfter(3, checkSnoozeDue)
+
     log("ClaudePanel module started")
     return self
 end
@@ -765,6 +955,10 @@ function obj:stop()
     watcher.stopPathWatcher(log)
     webviewModule.cleanup()
     tasks.clearCache()
+    if snoozeTimer then snoozeTimer:stop(); snoozeTimer = nil end
+    if caffeineWatcher then caffeineWatcher:stop(); caffeineWatcher = nil end
+    snoozeCheckFailCount = 0
+    snoozeNotifiedKeys = {}
     log("ClaudePanel module stopped")
     return self
 end
@@ -872,6 +1066,7 @@ obj.defaultShortcuts = {
     deleteTask = {modifiers = {'cmd'}, keys = {'Backspace'}},
     openTask = {modifiers = {}, keys = {' '}},
     launchTask = {modifiers = {}, keys = {'Enter'}},
+    snoozeTask = {modifiers = {}, keys = {'s', 'ㄴ'}},
 }
 
 function obj:bindShortcuts(mapping)

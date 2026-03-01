@@ -166,7 +166,8 @@ function M.generateTaskCard(task, utils, options)
 
     local h = '<div class="task"' .. opacityStyle
         .. ' data-task-id="' .. utils.escapeHtml(tostring(task.id))
-        .. '" data-session-id="' .. utils.escapeHtml(task._sessionId) .. '">\n'
+        .. '" data-session-id="' .. utils.escapeHtml(task._sessionId)
+        .. '" data-subject="' .. utils.escapeHtml(task.subject or '') .. '">\n'
     h = h .. '    <span class="task-icon ' .. statusClass .. '">' .. statusIcon .. '</span>\n'
     h = h .. '    <div class="task-content">\n'
     h = h .. '        <div class="task-subject">' .. utils.escapeHtml(task.subject) .. '</div>\n'
@@ -182,7 +183,16 @@ function M.generateTaskCard(task, utils, options)
     if cwdHtml ~= '' then
         h = h .. '        ' .. cwdHtml .. '\n'
     end
-    h = h .. '        ' .. blocked .. launchBtn .. '\n'
+    local snoozeBtn = ''
+    if task.status ~= 'completed' then
+        snoozeBtn = string.format(
+            "<button class='task-snooze-btn' title='Snooze' onclick='snoozeTask(%s, %s, %s); event.stopPropagation();'>&#9200;</button>",
+            utils.jsonEncodeString(tostring(task.id)),
+            utils.jsonEncodeString(task._sessionId or ''),
+            utils.jsonEncodeString(task.subject or '')
+        )
+    end
+    h = h .. '        ' .. blocked .. snoozeBtn .. launchBtn .. '\n'
     h = h .. '    </div>\n'
     h = h .. '</div>\n'
 
@@ -201,18 +211,36 @@ function M.generateHTML(opts)
     local cwdGroups = opts.cwdGroups
     local cwdCollapseState = opts.cwdCollapseState
     local teamData = opts.teamData
+    local snoozeData = opts.snoozeData or {}
+
+    local snoozeLookup = {}
+    local dueItems = {}
+    local now = os.time()
+    for _, item in ipairs(snoozeData) do
+        snoozeLookup[item.key] = item
+        if item.epochUntil and item.epochUntil <= now then
+            table.insert(dueItems, item)
+        end
+    end
+    local snoozeBadgeCount = #snoozeData
 
     local pendingTasks = {}
     local inProgressTasks = {}
     local completedTasks = {}
 
     for _, task in ipairs(tasks) do
-        if task.status == "completed" then
-            table.insert(completedTasks, task)
-        elseif task.status == "in_progress" then
-            table.insert(inProgressTasks, task)
-        else
-            table.insert(pendingTasks, task)
+        local snoozeKey = (task._sessionId or '') .. ':' .. tostring(task.id)
+        local snoozeEntry = snoozeLookup[snoozeKey]
+        local isSnoozedNotDue = snoozeEntry and snoozeEntry.epochUntil and snoozeEntry.epochUntil > now
+
+        if not isSnoozedNotDue then
+            if task.status == "completed" then
+                table.insert(completedTasks, task)
+            elseif task.status == "in_progress" then
+                table.insert(inProgressTasks, task)
+            else
+                table.insert(pendingTasks, task)
+            end
         end
     end
 
@@ -594,6 +622,67 @@ function M.generateHTML(opts)
         .task-handoff-btn:hover {
             background: #7c3aed;
         }
+        /* Snooze button on task cards */
+        .task-snooze-btn {
+            position: absolute; right: 36px; bottom: 0;
+            display: none; align-items: center; justify-content: center;
+            width: 28px; height: 28px; border-radius: 6px;
+            background: rgba(6,182,212,0.15); color: #06b6d4;
+            border: none; cursor: pointer; font-size: 14px;
+            transition: background 0.15s;
+        }
+        .task:hover .task-snooze-btn, .task.focused .task-snooze-btn { display: flex; }
+        .task-snooze-btn:hover { background: rgba(6,182,212,0.3); }
+        .task-completed .task-snooze-btn { display: none !important; }
+        /* Due section */
+        .due-section { margin-bottom: 12px; }
+        .due-section .section-header { color: #f97316; }
+        .due-task {
+            border-left: 3px solid #f97316; padding: 8px 12px; margin-bottom: 4px;
+            background: rgba(249,115,22,0.08); border-radius: 0 6px 6px 0;
+            display: flex; align-items: center; justify-content: space-between;
+        }
+        .due-task-info { flex: 1; min-width: 0; }
+        .due-task-subject { color: #e2e8f0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .due-task-time { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+        .due-task-actions { display: flex; gap: 6px; flex-shrink: 0; }
+        .due-btn-resnooze {
+            padding: 4px 10px; border-radius: 4px; border: none; cursor: pointer;
+            font-size: 11px; background: rgba(6,182,212,0.2); color: #06b6d4;
+        }
+        .due-btn-resnooze:hover { background: rgba(6,182,212,0.35); }
+        .due-btn-dismiss {
+            padding: 4px 10px; border-radius: 4px; border: none; cursor: pointer;
+            font-size: 11px; background: rgba(148,163,184,0.15); color: #94a3b8;
+        }
+        .due-btn-dismiss:hover { background: rgba(148,163,184,0.3); }
+        /* Snooze tab */
+        .tab-btn.active.snooze-tab { border-bottom-color: #06b6d4; }
+        .snooze-badge {
+            background: #06b6d4; color: #fff; font-size: 10px;
+            padding: 1px 6px; border-radius: 10px; margin-left: 4px;
+            display: inline-block; min-width: 16px; text-align: center;
+        }
+        /* Snooze list */
+        .snooze-list { display: none; padding: 8px 0; }
+        .snooze-item {
+            border-left: 3px solid #06b6d4; padding: 8px 12px; margin-bottom: 4px;
+            background: rgba(6,182,212,0.05); border-radius: 0 6px 6px 0;
+            display: flex; align-items: center; justify-content: space-between;
+            cursor: default;
+        }
+        .snooze-item.focused { outline: 1px solid #06b6d4; outline-offset: -1px; }
+        .snooze-item.due { border-left-color: #f97316; }
+        .snooze-item-info { flex: 1; min-width: 0; }
+        .snooze-item-subject { color: #e2e8f0; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .snooze-item-time { color: #94a3b8; font-size: 11px; margin-top: 2px; }
+        .snooze-item-meta { color: #64748b; font-size: 10px; margin-top: 2px; }
+        .snooze-item-actions { flex-shrink: 0; }
+        .snooze-unsnooze-btn {
+            padding: 4px 10px; border-radius: 4px; border: none; cursor: pointer;
+            font-size: 11px; background: rgba(6,182,212,0.2); color: #06b6d4;
+        }
+        .snooze-unsnooze-btn:hover { background: rgba(6,182,212,0.35); }
         /* Tab bar */
         .tab-bar {
             display: flex;
@@ -934,7 +1023,7 @@ function M.generateHTML(opts)
         let isCreating = false;
         let formCollapsed = true;
         let focusedIndex = -1;
-        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'cwd' | 'memory'
+        let currentMode = ']] .. (currentMode or 'session') .. [['; // 'session' | 'search' | 'cwd' | 'memory' | 'snooze'
         let searchDebounceTimer = null;
         let helpVisible = false;
         let memoryFocusedIndex = -1;
@@ -991,6 +1080,7 @@ function M.generateHTML(opts)
             var taskSections = document.getElementById('taskSections');
             var memoryList = document.getElementById('memoryList');
             var cwdList = document.getElementById('cwdList');
+            var snoozeList = document.getElementById('snoozeList');
 
             // Update tab active states
             document.querySelectorAll('.tab-btn').forEach(function(t) { t.classList.remove('active'); });
@@ -1000,11 +1090,15 @@ function M.generateHTML(opts)
             releaseToNavigation();
             memoryFocusedIndex = -1;
             cwdFocusedIndex = -1;
+            snoozeFocusedIndex = -1;
             if (memoryList) {
                 memoryList.querySelectorAll('.memory-file').forEach(function(f) { f.classList.remove('focused'); });
             }
             if (cwdList) {
                 cwdList.querySelectorAll('.task').forEach(function(t) { t.classList.remove('focused'); });
+            }
+            if (snoozeList) {
+                snoozeList.querySelectorAll('.snooze-item').forEach(function(el) { el.classList.remove('focused'); });
             }
 
             if (mode === 'search') {
@@ -1015,6 +1109,7 @@ function M.generateHTML(opts)
                 if (taskSections) taskSections.style.display = '';
                 if (memoryList) memoryList.classList.remove('visible');
                 if (cwdList) cwdList.classList.remove('visible');
+                if (snoozeList) snoozeList.style.display = 'none';
                 document.getElementById('searchInput').focus();
             } else if (mode === 'cwd') {
                 sessionContainer.classList.add('hidden');
@@ -1024,6 +1119,7 @@ function M.generateHTML(opts)
                 if (taskSections) taskSections.style.display = 'none';
                 if (memoryList) memoryList.classList.remove('visible');
                 if (cwdList) cwdList.classList.add('visible');
+                if (snoozeList) snoozeList.style.display = 'none';
                 clearSearch();
                 var cwdSearch = document.getElementById('cwdSearchInput');
                 if (cwdSearch) cwdSearch.focus();
@@ -1035,9 +1131,20 @@ function M.generateHTML(opts)
                 if (taskSections) taskSections.style.display = 'none';
                 if (memoryList) memoryList.classList.add('visible');
                 if (cwdList) cwdList.classList.remove('visible');
+                if (snoozeList) snoozeList.style.display = 'none';
                 clearSearch();
                 var memSearch = document.getElementById('memorySearchInput');
                 if (memSearch) memSearch.focus();
+            } else if (mode === 'snooze') {
+                sessionContainer.classList.add('hidden');
+                searchContainer.classList.add('hidden');
+                if (memorySearchContainer) memorySearchContainer.classList.add('hidden');
+                if (cwdSearchContainer) cwdSearchContainer.classList.add('hidden');
+                if (taskSections) taskSections.style.display = 'none';
+                if (memoryList) memoryList.classList.remove('visible');
+                if (cwdList) cwdList.classList.remove('visible');
+                if (snoozeList) snoozeList.style.display = 'block';
+                snoozeFocusedIndex = -1;
             } else {
                 sessionContainer.classList.remove('hidden');
                 searchContainer.classList.add('hidden');
@@ -1046,6 +1153,7 @@ function M.generateHTML(opts)
                 if (taskSections) taskSections.style.display = '';
                 if (memoryList) memoryList.classList.remove('visible');
                 if (cwdList) cwdList.classList.remove('visible');
+                if (snoozeList) snoozeList.style.display = 'none';
                 clearSearch();
                 document.getElementById('sessionInput').focus();
             }
@@ -1510,6 +1618,64 @@ function M.generateHTML(opts)
             document.getElementById('helpPopup').classList.toggle('hidden', !helpVisible);
         }
 
+        // Snooze functions
+        function snoozeTask(taskId, sessionId, subject) {
+            window.webkit.messageHandlers.taskBridge.postMessage({action:'snoozeTask', taskId:taskId, sessionId:sessionId, subject:subject});
+        }
+        function unsnoozeTask(key) {
+            window.webkit.messageHandlers.taskBridge.postMessage({action:'unsnoozeTask', key:key});
+        }
+        function dismissDueTask(key) {
+            window.webkit.messageHandlers.taskBridge.postMessage({action:'dismissDueTask', key:key});
+        }
+        function resnoozeTask(taskId, sessionId, subject) {
+            window.webkit.messageHandlers.taskBridge.postMessage({action:'resnoozeTask', taskId:taskId, sessionId:sessionId, subject:subject});
+        }
+        function snoozeFocusedTask() {
+            var focused = document.querySelector('.task.focused');
+            if (!focused) return;
+            var taskId = focused.getAttribute('data-task-id');
+            var sessionId = focused.getAttribute('data-session-id');
+            var subject = focused.getAttribute('data-subject');
+            if (taskId) snoozeTask(taskId, sessionId || '', subject || '');
+        }
+
+        var snoozeFocusedIndex = -1;
+        function getVisibleSnoozeItems() {
+            return document.querySelectorAll('#snoozeList .snooze-item');
+        }
+        function updateSnoozeFocus(delta) {
+            var items = getVisibleSnoozeItems();
+            if (items.length === 0) return;
+            items.forEach(function(el) { el.classList.remove('focused'); });
+            snoozeFocusedIndex += delta;
+            if (snoozeFocusedIndex < 0) snoozeFocusedIndex = 0;
+            if (snoozeFocusedIndex >= items.length) snoozeFocusedIndex = items.length - 1;
+            items[snoozeFocusedIndex].classList.add('focused');
+            items[snoozeFocusedIndex].scrollIntoView({block:'nearest'});
+        }
+        function unsnoozeFocusedItem() {
+            var items = getVisibleSnoozeItems();
+            if (snoozeFocusedIndex >= 0 && snoozeFocusedIndex < items.length) {
+                var key = items[snoozeFocusedIndex].getAttribute('data-key');
+                if (key) unsnoozeTask(key);
+            }
+        }
+        function resnoozeFocusedItem() {
+            var items = getVisibleSnoozeItems();
+            if (snoozeFocusedIndex >= 0 && snoozeFocusedIndex < items.length) {
+                var el = items[snoozeFocusedIndex];
+                var key = el.getAttribute('data-key');
+                if (!key) return;
+                var parts = key.split(':');
+                var sessionId = parts.slice(0, -1).join(':');
+                var taskId = parts[parts.length - 1];
+                var subjectEl = el.querySelector('.snooze-item-subject');
+                var subject = subjectEl ? subjectEl.textContent : '';
+                resnoozeTask(taskId, sessionId, subject);
+            }
+        }
+
         // Auto-focus first task on load
         document.addEventListener('DOMContentLoaded', function() {
             if (currentMode !== 'session') {
@@ -1569,7 +1735,7 @@ function M.generateHTML(opts)
             // Tab cycling (global, works even in input fields)
             if (e.key === '/') {
                 e.preventDefault();
-                var modes = ['search', 'cwd', 'session', 'memory'];
+                var modes = ['search', 'cwd', 'session', 'memory', 'snooze'];
                 var nextIndex = (modes.indexOf(currentMode) + 1) % modes.length;
                 setMode(modes[nextIndex]);
                 return;
@@ -1626,6 +1792,13 @@ function M.generateHTML(opts)
                         deleteFocusedCwdTask();
                         return;
                     }
+                } else if (currentMode === 'snooze') {
+                    // Snooze mode navigation
+                    if (matchesBinding(e, 'navigateDown')) { updateSnoozeFocus(1); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'navigateUp')) { updateSnoozeFocus(-1); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'deleteTask')) { unsnoozeFocusedItem(); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'openTask')) { unsnoozeFocusedItem(); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'launchTask')) { resnoozeFocusedItem(); e.preventDefault(); return; }
                 } else {
                     // Task mode navigation
                     if (matchesBinding(e, 'navigateDown')) {
@@ -1653,6 +1826,11 @@ function M.generateHTML(opts)
                         deleteFocusedTask();
                         return;
                     }
+                    if (matchesBinding(e, 'snoozeTask')) {
+                        snoozeFocusedTask();
+                        e.preventDefault();
+                        return;
+                    }
                 }
             }
         });
@@ -1672,6 +1850,7 @@ function M.generateHTML(opts)
             <button id="tab-cwd" class="tab-btn" onclick="setMode('cwd')">Projects</button>
             <button id="tab-session" class="tab-btn active" onclick="setMode('session')">Tasks</button>
             <button id="tab-memory" class="tab-btn memory-tab" onclick="setMode('memory')">Memory</button>
+            <button id="tab-snooze" class="tab-btn snooze-tab]] .. (currentMode == 'snooze' and ' active' or '') .. [[" onclick="setMode('snooze')">Snooze]] .. (snoozeBadgeCount > 0 and string.format('<span class="snooze-badge">%d</span>', snoozeBadgeCount) or '') .. [[</button>
             <span class="tab-spacer"></span>
             <button id="quickUpdateBtn" class="action-btn" onclick="showQuickUpdateDialog()" title="Quick Task ⌘E"]] .. (currentSessionValue == '' and ' disabled' or '') .. [[>⚡</button>
         </div>
@@ -1711,6 +1890,33 @@ function M.generateHTML(opts)
         </div>
     </div>
 ]]
+
+    -- Due section (snoozed tasks whose time has arrived) — outside taskSections so visible in ALL modes
+    if #dueItems > 0 then
+        html = html .. '<div class="due-section">'
+        html = html .. '<div class="section-header">Due</div>'
+        for _, item in ipairs(dueItems) do
+            local timeStr = utils.escapeHtml(item.snoozeUntil or '')
+            if item.epochUntil then
+                timeStr = os.date("%m/%d %H:%M", item.epochUntil)
+            end
+            local escapedKey = utils.escapeHtml(item.key or '')
+            local escapedSubject = utils.escapeHtml(item.subject or '')
+            local escapedTaskId = utils.escapeHtml(tostring(item.taskId or ''))
+            local escapedSessionId = utils.escapeHtml(item.sessionId or '')
+            local keyJson = utils.jsonEncodeString(item.key or '')
+            local taskIdJson = utils.jsonEncodeString(tostring(item.taskId or ''))
+            local sessionIdJson = utils.jsonEncodeString(item.sessionId or '')
+            local subjectJson = utils.jsonEncodeString(item.subject or '')
+            html = html .. string.format(
+                "<div class='due-task'><div class='due-task-info'><div class='due-task-subject'>%s</div><div class='due-task-time'>Snoozed until %s</div></div><div class='due-task-actions'><button class='due-btn-resnooze' onclick='resnoozeTask(%s, %s, %s); event.stopPropagation();'>Re-snooze</button><button class='due-btn-dismiss' onclick='dismissDueTask(%s); event.stopPropagation();'>Dismiss</button></div></div>",
+                escapedSubject, timeStr, taskIdJson, sessionIdJson,
+                subjectJson,
+                keyJson
+            )
+        end
+        html = html .. '</div>'
+    end
 
     html = html .. '    <div id="taskSections">\n'
     html = html .. M.generateTeamHeader(teamData, utils)
@@ -1878,6 +2084,34 @@ function M.generateHTML(opts)
     end
     html = html .. '    </div>\n'
 
+    -- Snooze list (hidden by default, shown when snooze mode active)
+    html = html .. '    <div id="snoozeList" class="snooze-list">\n'
+    if #snoozeData == 0 then
+        html = html .. '        <div style="color:#64748b;text-align:center;padding:24px;font-size:13px;">No snoozed tasks</div>\n'
+    else
+        for _, item in ipairs(snoozeData) do
+            local timeStr = utils.escapeHtml(item.snoozeUntil or '')
+            if item.epochUntil then
+                timeStr = os.date("%m/%d %H:%M", item.epochUntil)
+            end
+            local isDue = item.epochUntil and item.epochUntil <= now
+            local escapedKey = utils.escapeHtml(item.key or '')
+            local escapedSubject = utils.escapeHtml(item.subject or '')
+            local keyJson = utils.jsonEncodeString(item.key or '')
+            html = html .. string.format(
+                "        <div class='snooze-item%s' data-key='%s'><div class='snooze-item-info'><div class='snooze-item-subject'>%s</div><div class='snooze-item-time'>Until %s</div><div class='snooze-item-meta'>%s#%s</div></div><div class='snooze-item-actions'><button class='snooze-unsnooze-btn' onclick='unsnoozeTask(%s); event.stopPropagation();'>Unsnooze</button></div></div>\n",
+                isDue and ' due' or '',
+                escapedKey,
+                escapedSubject,
+                timeStr,
+                utils.escapeHtml(item.sessionId or ''),
+                utils.escapeHtml(tostring(item.taskId or '')),
+                keyJson
+            )
+        end
+    end
+    html = html .. '    </div>\n'
+
     html = html .. [[
     <div id="helpOverlay" class="help-overlay hidden" onclick="toggleHelp()"></div>
     <div id="helpPopup" class="help-popup hidden">
@@ -1889,6 +2123,7 @@ function M.generateHTML(opts)
             <div class="help-row"><span class="help-key">Space</span><span class="help-desc">View detail</span></div>
             <div class="help-row"><span class="help-key">Enter</span><span class="help-desc">Launch Claude</span></div>
             <div class="help-row"><span class="help-key">⌘⌫</span><span class="help-desc">Delete task</span></div>
+            <div class="help-row"><span class="help-key">s</span><span class="help-desc">Snooze task</span></div>
         </div>
         <div class="help-section">
             <div class="help-section-title">Mode</div>
