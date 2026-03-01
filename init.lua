@@ -148,7 +148,11 @@ local function getSnoozeData()
     local ok, data = pcall(function()
         return snoozeModule.list(obj.state.snoozePath, utils, log)
     end)
-    return ok and data or {}
+    if not ok then
+        log("Snooze data load failed: " .. tostring(data))
+        return {}
+    end
+    return data
 end
 
 local function refreshWebView()
@@ -188,11 +192,21 @@ local function refreshWebView()
     log("WebView refreshed with " .. #allTasks .. " tasks")
 end
 
+local snoozeCheckFailCount = 0
+
 local function checkSnoozeDue()
     local ok, dueItems = pcall(function()
         return snoozeModule.checkDue(obj.state.snoozePath, utils, log)
     end)
-    if not ok then dueItems = {} end
+    if not ok then
+        snoozeCheckFailCount = snoozeCheckFailCount + 1
+        log("checkSnoozeDue failed: " .. tostring(dueItems))
+        if snoozeCheckFailCount == 3 then
+            hs.alert.show("Snooze check error - see console", 3)
+        end
+        return
+    end
+    snoozeCheckFailCount = 0
     if #dueItems > 0 then
         local newDue = false
         for _, item in ipairs(dueItems) do
@@ -524,9 +538,12 @@ function obj:deleteTask(taskId, sessionId)
 
     -- Clean up any associated snooze entry
     local snoozeKey = snoozeModule.makeKey(sessionId, taskId)
-    pcall(function()
+    local snoozeOk, snoozeErr = pcall(function()
         snoozeModule.remove(obj.state.snoozePath, snoozeKey, utils, log)
     end)
+    if not snoozeOk then
+        log("deleteTask: snooze cleanup failed for " .. snoozeKey .. ": " .. tostring(snoozeErr))
+    end
     snoozeNotifiedKeys[snoozeKey] = nil
 
     hs.alert.show("Task deleted", 1)
@@ -658,12 +675,15 @@ function obj:snoozeTask(sessionId, taskId, subject, isoTimestamp)
 end
 
 function obj:unsnoozeTask(key)
-    local ok = pcall(function()
+    local ok, err = pcall(function()
         snoozeModule.remove(obj.state.snoozePath, key, utils, log)
     end)
     if ok then
         snoozeNotifiedKeys[key] = nil
         hs.alert.show("Unsnoozed")
+    else
+        log("unsnoozeTask failed for key " .. tostring(key) .. ": " .. tostring(err))
+        hs.alert.show("Failed to unsnooze", 2)
     end
     refreshWebView()
 end
@@ -707,6 +727,12 @@ function obj:snoozeTaskWithParsing(sessionId, taskId, subject, input)
         "--",
         input
     })
+
+    if not task then
+        log("snoozeTaskWithParsing: hs.task.new returned nil for " .. claudePath)
+        hs.alert.show("Failed to start time parser", 2)
+        return
+    end
 
     task:start()
 end
@@ -931,6 +957,8 @@ function obj:stop()
     tasks.clearCache()
     if snoozeTimer then snoozeTimer:stop(); snoozeTimer = nil end
     if caffeineWatcher then caffeineWatcher:stop(); caffeineWatcher = nil end
+    snoozeCheckFailCount = 0
+    snoozeNotifiedKeys = {}
     log("ClaudePanel module stopped")
     return self
 end

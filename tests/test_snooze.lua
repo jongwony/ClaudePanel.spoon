@@ -95,7 +95,7 @@ io.open = function(path, mode)
         -- Return a mock file handle that captures writes
         local buffer = {}
         return {
-            write = function(self, content) table.insert(buffer, content) end,
+            write = function(self, content) table.insert(buffer, content); return self end,
             close = function(self) mockFiles[path] = table.concat(buffer) end,
         }
     elseif mode == "r" then
@@ -118,6 +118,27 @@ io.open = function(path, mode)
         return nil
     end
     return realIoOpen(path, mode)
+end
+
+-- Override os.rename to work with mockFiles (for atomic save)
+local realOsRename = os.rename
+os.rename = function(src, dst)
+    if mockFiles[src] ~= nil then
+        mockFiles[dst] = mockFiles[src]
+        mockFiles[src] = nil
+        return true
+    end
+    return realOsRename(src, dst)
+end
+
+-- Override os.remove to work with mockFiles
+local realOsRemove = os.remove
+os.remove = function(path)
+    if mockFiles[path] ~= nil then
+        mockFiles[path] = nil
+        return true
+    end
+    return realOsRemove(path)
 end
 
 local mockUtils = {
@@ -487,6 +508,55 @@ test("checkDue: does not remove due entries", function()
     assertNotNil(data["s1:1"], "Entry should still exist after checkDue")
 
     os.time = originalOsTime
+end)
+
+-- ========================= save() throw contract =========================
+
+test("save: throws error when hs.json.encode returns nil", function()
+    local origEncode = hs.json.encode
+    hs.json.encode = function() return nil end
+    local ok, err = pcall(function()
+        snooze.save(SNOOZE_PATH, {}, mockLog)
+    end)
+    hs.json.encode = origEncode
+    assertEqual(ok, false, "save should throw")
+    assert(tostring(err):find("failed to encode"), "Error should mention encode failure")
+end)
+
+test("save: throws error when io.open fails", function()
+    local origOpen = io.open
+    io.open = function() return nil end
+    local ok, err = pcall(function()
+        snooze.save(SNOOZE_PATH, {test = true}, mockLog)
+    end)
+    io.open = origOpen
+    assertEqual(ok, false, "save should throw")
+    assert(tostring(err):find("failed to open"), "Error should mention file open failure")
+end)
+
+test("save: atomic write uses tmp file then rename", function()
+    mockFiles = {}
+    snooze.save(SNOOZE_PATH, {a = 1}, mockLog)
+    -- After save, data should be at SNOOZE_PATH (renamed from .tmp)
+    assertNotNil(mockFiles[SNOOZE_PATH], "Data should exist at snooze path after atomic save")
+    assertEqual(mockFiles[SNOOZE_PATH .. ".tmp"], nil, "Tmp file should not remain")
+end)
+
+-- ========================= makeKey nil defense =========================
+
+test("makeKey: handles nil sessionId gracefully", function()
+    local key = snooze.makeKey(nil, "1")
+    assertEqual(key, ":1", "nil sessionId should become empty string")
+end)
+
+test("makeKey: handles nil taskId gracefully", function()
+    local key = snooze.makeKey("sess", nil)
+    assertEqual(key, "sess:", "nil taskId should become empty string")
+end)
+
+test("makeKey: handles both nil gracefully", function()
+    local key = snooze.makeKey(nil, nil)
+    assertEqual(key, ":", "both nil should produce ':'")
 end)
 
 -- Summary

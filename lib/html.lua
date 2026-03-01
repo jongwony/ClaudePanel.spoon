@@ -1896,7 +1896,7 @@ function M.generateHTML(opts)
         html = html .. '<div class="due-section">'
         html = html .. '<div class="section-header">Due</div>'
         for _, item in ipairs(dueItems) do
-            local timeStr = item.snoozeUntil or ''
+            local timeStr = utils.escapeHtml(item.snoozeUntil or '')
             if item.epochUntil then
                 timeStr = os.date("%m/%d %H:%M", item.epochUntil)
             end
@@ -2090,7 +2090,7 @@ function M.generateHTML(opts)
         html = html .. '        <div style="color:#64748b;text-align:center;padding:24px;font-size:13px;">No snoozed tasks</div>\n'
     else
         for _, item in ipairs(snoozeData) do
-            local timeStr = item.snoozeUntil or ''
+            local timeStr = utils.escapeHtml(item.snoozeUntil or '')
             if item.epochUntil then
                 timeStr = os.date("%m/%d %H:%M", item.epochUntil)
             end

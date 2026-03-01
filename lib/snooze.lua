@@ -5,7 +5,7 @@ local M = {}
 
 -- Build composite key from sessionId and taskId
 function M.makeKey(sessionId, taskId)
-    return sessionId .. ":" .. taskId
+    return tostring(sessionId or '') .. ":" .. tostring(taskId or '')
 end
 
 -- Parse ISO 8601 string to epoch seconds
@@ -116,19 +116,28 @@ function M.load(snoozePath, utils, log)
     return data
 end
 
--- Save snooze data to file
+-- Save snooze data to file (atomic: write to tmp, then rename)
 -- Throws error on failure so callers can catch via pcall
 function M.save(snoozePath, data, log)
     local encoded = hs.json.encode(data)
     if not encoded then
         error("Snooze: failed to encode data")
     end
-    local f = io.open(snoozePath, "w")
+    local tmpPath = snoozePath .. ".tmp"
+    local f = io.open(tmpPath, "w")
     if not f then
-        error("Snooze: failed to write to " .. snoozePath)
+        error("Snooze: failed to open temp file " .. tmpPath)
     end
-    f:write(encoded)
+    local ok, writeErr = f:write(encoded)
     f:close()
+    if not ok then
+        os.remove(tmpPath)
+        error("Snooze: write failed: " .. tostring(writeErr))
+    end
+    local renameOk, renameErr = os.rename(tmpPath, snoozePath)
+    if not renameOk then
+        error("Snooze: rename failed: " .. tostring(renameErr))
+    end
     if log then log("Snooze: saved to " .. snoozePath) end
     return true
 end
