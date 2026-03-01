@@ -186,9 +186,9 @@ function M.generateTaskCard(task, utils, options)
     local snoozeBtn = ''
     if task.status ~= 'completed' then
         snoozeBtn = string.format(
-            "<button class='task-snooze-btn' title='Snooze' onclick='snoozeTask(\"%s\", \"%s\", %s); event.stopPropagation();'>&#9200;</button>",
-            utils.escapeHtml(tostring(task.id)),
-            utils.escapeHtml(task._sessionId or ''),
+            "<button class='task-snooze-btn' title='Snooze' onclick='snoozeTask(%s, %s, %s); event.stopPropagation();'>&#9200;</button>",
+            utils.jsonEncodeString(tostring(task.id)),
+            utils.jsonEncodeString(task._sessionId or ''),
             utils.jsonEncodeString(task.subject or '')
         )
     end
@@ -1661,6 +1661,20 @@ function M.generateHTML(opts)
                 if (key) unsnoozeTask(key);
             }
         }
+        function resnoozeFocusedItem() {
+            var items = getVisibleSnoozeItems();
+            if (snoozeFocusedIndex >= 0 && snoozeFocusedIndex < items.length) {
+                var el = items[snoozeFocusedIndex];
+                var key = el.getAttribute('data-key');
+                if (!key) return;
+                var parts = key.split(':');
+                var sessionId = parts.slice(0, -1).join(':');
+                var taskId = parts[parts.length - 1];
+                var subjectEl = el.querySelector('.snooze-item-subject');
+                var subject = subjectEl ? subjectEl.textContent : '';
+                resnoozeTask(taskId, sessionId, subject);
+            }
+        }
 
         // Auto-focus first task on load
         document.addEventListener('DOMContentLoaded', function() {
@@ -1783,6 +1797,8 @@ function M.generateHTML(opts)
                     if (matchesBinding(e, 'navigateDown')) { updateSnoozeFocus(1); e.preventDefault(); return; }
                     if (matchesBinding(e, 'navigateUp')) { updateSnoozeFocus(-1); e.preventDefault(); return; }
                     if (matchesBinding(e, 'deleteTask')) { unsnoozeFocusedItem(); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'openTask')) { unsnoozeFocusedItem(); e.preventDefault(); return; }
+                    if (matchesBinding(e, 'launchTask')) { resnoozeFocusedItem(); e.preventDefault(); return; }
                 } else {
                     // Task mode navigation
                     if (matchesBinding(e, 'navigateDown')) {
@@ -1875,12 +1891,7 @@ function M.generateHTML(opts)
     </div>
 ]]
 
-    html = html .. '    <div id="taskSections">\n'
-    html = html .. M.generateTeamHeader(teamData, utils)
-
-    local teamContext = teamData and {memberColorMap = teamData.memberColorMap, cwd = teamData.cwd}
-
-    -- Due section (snoozed tasks whose time has arrived)
+    -- Due section (snoozed tasks whose time has arrived) — outside taskSections so visible in ALL modes
     if #dueItems > 0 then
         html = html .. '<div class="due-section">'
         html = html .. '<div class="section-header">Due</div>'
@@ -1893,15 +1904,24 @@ function M.generateHTML(opts)
             local escapedSubject = utils.escapeHtml(item.subject or '')
             local escapedTaskId = utils.escapeHtml(tostring(item.taskId or ''))
             local escapedSessionId = utils.escapeHtml(item.sessionId or '')
+            local keyJson = utils.jsonEncodeString(item.key or '')
+            local taskIdJson = utils.jsonEncodeString(tostring(item.taskId or ''))
+            local sessionIdJson = utils.jsonEncodeString(item.sessionId or '')
+            local subjectJson = utils.jsonEncodeString(item.subject or '')
             html = html .. string.format(
-                "<div class='due-task'><div class='due-task-info'><div class='due-task-subject'>%s</div><div class='due-task-time'>Snoozed until %s</div></div><div class='due-task-actions'><button class='due-btn-resnooze' onclick='resnoozeTask(\"%s\", \"%s\", %s); event.stopPropagation();'>Re-snooze</button><button class='due-btn-dismiss' onclick='dismissDueTask(\"%s\"); event.stopPropagation();'>Dismiss</button></div></div>",
-                escapedSubject, timeStr, escapedTaskId, escapedSessionId,
-                utils.jsonEncodeString(item.subject or ''),
-                escapedKey
+                "<div class='due-task'><div class='due-task-info'><div class='due-task-subject'>%s</div><div class='due-task-time'>Snoozed until %s</div></div><div class='due-task-actions'><button class='due-btn-resnooze' onclick='resnoozeTask(%s, %s, %s); event.stopPropagation();'>Re-snooze</button><button class='due-btn-dismiss' onclick='dismissDueTask(%s); event.stopPropagation();'>Dismiss</button></div></div>",
+                escapedSubject, timeStr, taskIdJson, sessionIdJson,
+                subjectJson,
+                keyJson
             )
         end
         html = html .. '</div>'
     end
+
+    html = html .. '    <div id="taskSections">\n'
+    html = html .. M.generateTeamHeader(teamData, utils)
+
+    local teamContext = teamData and {memberColorMap = teamData.memberColorMap, cwd = teamData.cwd}
 
     -- In Progress section
     if #inProgressTasks > 0 then
@@ -2077,15 +2097,16 @@ function M.generateHTML(opts)
             local isDue = item.epochUntil and item.epochUntil <= now
             local escapedKey = utils.escapeHtml(item.key or '')
             local escapedSubject = utils.escapeHtml(item.subject or '')
+            local keyJson = utils.jsonEncodeString(item.key or '')
             html = html .. string.format(
-                "        <div class='snooze-item%s' data-key='%s'><div class='snooze-item-info'><div class='snooze-item-subject'>%s</div><div class='snooze-item-time'>Until %s</div><div class='snooze-item-meta'>%s#%s</div></div><div class='snooze-item-actions'><button class='snooze-unsnooze-btn' onclick='unsnoozeTask(\"%s\"); event.stopPropagation();'>Unsnooze</button></div></div>\n",
+                "        <div class='snooze-item%s' data-key='%s'><div class='snooze-item-info'><div class='snooze-item-subject'>%s</div><div class='snooze-item-time'>Until %s</div><div class='snooze-item-meta'>%s#%s</div></div><div class='snooze-item-actions'><button class='snooze-unsnooze-btn' onclick='unsnoozeTask(%s); event.stopPropagation();'>Unsnooze</button></div></div>\n",
                 isDue and ' due' or '',
                 escapedKey,
                 escapedSubject,
                 timeStr,
                 utils.escapeHtml(item.sessionId or ''),
                 utils.escapeHtml(tostring(item.taskId or '')),
-                escapedKey
+                keyJson
             )
         end
     end

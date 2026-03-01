@@ -286,11 +286,16 @@ test("load: missing file returns empty table", function()
     assertEqual(next(data), nil, "Should be empty table")
 end)
 
-test("load: corrupt JSON returns empty table", function()
+test("load: corrupt JSON returns empty table and creates backup", function()
     resetMockFiles()
-    mockFiles[SNOOZE_PATH] = "not valid json {"
+    local corruptContent = "not valid json {"
+    mockFiles[SNOOZE_PATH] = corruptContent
     local data = snooze.load(SNOOZE_PATH, mockUtils, mockLog)
     assertEqual(next(data), nil, "Should be empty table for corrupt JSON")
+    -- Verify backup was created
+    local bakContent = mockFiles[SNOOZE_PATH .. ".bak"]
+    assertNotNil(bakContent, "Backup file should be created")
+    assertEqual(bakContent, corruptContent, "Backup should contain original corrupt content")
 end)
 
 test("load: valid JSON returns data", function()

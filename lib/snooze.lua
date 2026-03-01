@@ -25,7 +25,7 @@ function M.parseISO(isoStr)
     --
     -- Strategy: interpret as local time first, then adjust based on timezone info.
     local timeTable = {year = year, month = month, day = day,
-                       hour = hour, min = min, sec = sec, isdst = false}
+                       hour = hour, min = min, sec = sec}
     local epoch = os.time(timeTable)
     -- epoch now represents "these date/time values interpreted as local time"
 
@@ -35,7 +35,7 @@ function M.parseISO(isoStr)
         -- sysOffset = localTime - UTC (positive east of Greenwich)
         local lt = os.date("*t", epoch)
         local ut = os.date("!*t", epoch)
-        lt.isdst = false
+        ut.isdst = lt.isdst
         local sysOffset = os.difftime(os.time(lt), os.time(ut))
         -- os.time gave us epoch assuming local; actual UTC is sysOffset seconds later
         epoch = epoch + sysOffset
@@ -47,7 +47,7 @@ function M.parseISO(isoStr)
             -- Compute system offset first.
             local lt = os.date("*t", epoch)
             local ut = os.date("!*t", epoch)
-            lt.isdst = false
+            ut.isdst = lt.isdst
             local sysOffset = os.difftime(os.time(lt), os.time(ut))
             -- Convert from "local interpretation" to UTC
             epoch = epoch + sysOffset
@@ -73,9 +73,11 @@ function M.toISO(epochTime)
     local utcTime = os.date("!*t", epochTime)
 
     -- Calculate local offset in seconds
-    local localEpoch = os.time(localTime)
-    local utcEpoch = os.time(utcTime)
-    local offsetSec = os.difftime(localEpoch, utcEpoch)
+    -- os.time() interprets its argument as local time, so os.time(utcTime) gives
+    -- a value that is (epochTime - offset). We use localTime's isdst on utcTime
+    -- to ensure consistent DST interpretation.
+    utcTime.isdst = localTime.isdst
+    local offsetSec = os.difftime(os.time(localTime), os.time(utcTime))
 
     local sign = "+"
     if offsetSec < 0 then
@@ -100,6 +102,14 @@ function M.load(snoozePath, utils, log)
     end
     local data = utils.parseJSON(content)
     if not data or type(data) ~= "table" then
+        -- Backup corrupt file before returning empty table to prevent data loss
+        local bakPath = snoozePath .. ".bak"
+        local bakFile = io.open(bakPath, "w")
+        if bakFile then
+            bakFile:write(content)
+            bakFile:close()
+            if log then log("Snooze: corrupt file backed up to " .. bakPath) end
+        end
         if log then log("Snooze: corrupt or empty file, returning {}") end
         return {}
     end
@@ -107,21 +117,20 @@ function M.load(snoozePath, utils, log)
 end
 
 -- Save snooze data to file
+-- Throws error on failure so callers can catch via pcall
 function M.save(snoozePath, data, log)
     local encoded = hs.json.encode(data)
     if not encoded then
-        if log then log("Snooze: failed to encode data") end
-        return false
+        error("Snooze: failed to encode data")
     end
     local f = io.open(snoozePath, "w")
-    if f then
-        f:write(encoded)
-        f:close()
-        if log then log("Snooze: saved to " .. snoozePath) end
-        return true
+    if not f then
+        error("Snooze: failed to write to " .. snoozePath)
     end
-    if log then log("Snooze: failed to write to " .. snoozePath) end
-    return false
+    f:write(encoded)
+    f:close()
+    if log then log("Snooze: saved to " .. snoozePath) end
+    return true
 end
 
 -- Add a snooze entry
@@ -150,8 +159,7 @@ function M.remove(snoozePath, key, utils, log)
         return false
     end
     data[key] = nil
-    M.save(snoozePath, data, log)
-    return true
+    return M.save(snoozePath, data, log)
 end
 
 -- List all snooze entries sorted by snoozeUntil ascending

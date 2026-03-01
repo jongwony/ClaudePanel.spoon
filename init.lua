@@ -521,6 +521,14 @@ function obj:deleteTask(taskId, sessionId)
     end
 
     log("deleteTask: Deleted " .. filepath)
+
+    -- Clean up any associated snooze entry
+    local snoozeKey = snoozeModule.makeKey(sessionId, taskId)
+    pcall(function()
+        snoozeModule.remove(obj.state.snoozePath, snoozeKey, utils, log)
+    end)
+    snoozeNotifiedKeys[snoozeKey] = nil
+
     hs.alert.show("Task deleted", 1)
     obj:refresh()
     return true
@@ -673,16 +681,9 @@ function obj:snoozeTaskWithParsing(sessionId, taskId, subject, input)
         os.date("%z")
     )
 
-    local escapedSystemPrompt = systemPrompt:gsub("'", "'\\''")
-    local escapedInput = input:gsub("'", "'\\''")
-    local cmd = string.format(
-        "%s -p --model haiku --no-session-persistence --disable-slash-commands --strict-mcp-config --dangerously-skip-permissions --setting-sources '' --system-prompt '%s' --verbose -- '%s'",
-        claudePath, escapedSystemPrompt, escapedInput
-    )
+    log("Snooze parse input: " .. input)
 
-    log("Snooze parse cmd: " .. cmd)
-
-    hs.task.new("/bin/bash", function(exitCode, stdout, stderr)
+    local task = hs.task.new(claudePath, function(exitCode, stdout, stderr)
         if exitCode == 0 and stdout then
             local isoStr = stdout:match("^%s*(.-)%s*$")
             if isoStr and snoozeModule.parseISO(isoStr) then
@@ -693,7 +694,21 @@ function obj:snoozeTaskWithParsing(sessionId, taskId, subject, input)
         else
             hs.alert.show("Time parsing failed: " .. (stderr or "unknown error"))
         end
-    end, {"-c", cmd}):start()
+    end, {
+        "-p",
+        "--model", "haiku",
+        "--no-session-persistence",
+        "--disable-slash-commands",
+        "--strict-mcp-config",
+        "--dangerously-skip-permissions",
+        "--setting-sources", "",
+        "--system-prompt", systemPrompt,
+        "--verbose",
+        "--",
+        input
+    })
+
+    task:start()
 end
 
 function obj:launchClaudeWithTaskList()
