@@ -18,14 +18,20 @@ from pathlib import Path
 
 
 TASKS_DIR = Path.home() / ".claude" / "tasks"
+MAX_PR_DISPLAY = 20
+MAX_HANDOVER_DISPLAY = 5
 
 
-def find_pending_tasks() -> list[dict]:
-    """Find all pending tasks that have metadata.pr or metadata.source='handover'."""
+def find_pending_tasks() -> dict[str, list[dict]]:
+    """Find all pending tasks that have metadata.pr or metadata.source='handover'.
+
+    Returns pre-partitioned dict: {"pr": [...], "handover": [...]}.
+    """
+    result = {"pr": [], "handover": []}
+
     if not TASKS_DIR.is_dir():
-        return []
+        return result
 
-    results = []
     try:
         for session_dir in TASKS_DIR.iterdir():
             if not session_dir.is_dir():
@@ -35,28 +41,30 @@ def find_pending_tasks() -> list[dict]:
                     if task_file.suffix != ".json":
                         continue
                     try:
-                        data = json.loads(task_file.read_text())
+                        with task_file.open() as f:
+                            data = json.load(f)
                         if data.get("status") != "pending":
                             continue
                         metadata = data.get("metadata", {})
                         if not isinstance(metadata, dict):
                             continue
                         pr_num = metadata.get("pr", "")
-                        source = metadata.get("source", "")
-                        if not pr_num and source != "handover":
+                        task_source = metadata.get("source", "")
+                        if not pr_num and task_source != "handover":
                             continue
                         entry = {
                             "session": session_dir.name,
                             "task_id": task_file.stem,
                             "subject": data.get("subject", "(no subject)"),
-                            "kind": "handover" if source == "handover" else "pr",
                         }
-                        if pr_num:
+                        if task_source == "handover":
+                            entry["topic"] = metadata.get("topic", "")
+                            entry["description"] = data.get("description", "")
+                            result["handover"].append(entry)
+                        else:
                             entry["pr"] = str(pr_num)
                             entry["repo"] = metadata.get("repo", "")
-                        if source == "handover":
-                            entry["topic"] = metadata.get("topic", "")
-                        results.append(entry)
+                            result["pr"].append(entry)
                     except (json.JSONDecodeError, OSError):
                         continue
             except OSError:
@@ -64,7 +72,7 @@ def find_pending_tasks() -> list[dict]:
     except OSError:
         pass
 
-    return results
+    return result
 
 
 def main():
@@ -75,31 +83,34 @@ def main():
 
         hook_input = json.loads(input_data)
 
-        # Only run on startup (not resume or compact)
-        source = hook_input.get("source", "")
-        if source != "startup":
+        hook_source = hook_input.get("source", "")
+        if hook_source != "startup":
             sys.exit(0)
 
-        tasks = find_pending_tasks()
-        if not tasks:
+        grouped = find_pending_tasks()
+        pr_tasks = grouped["pr"]
+        handover_tasks = grouped["handover"]
+        if not pr_tasks and not handover_tasks:
             sys.exit(0)
-
-        pr_tasks = [t for t in tasks if t["kind"] == "pr"]
-        handover_tasks = [t for t in tasks if t["kind"] == "handover"]
 
         lines = []
         if pr_tasks:
             lines.append(f"Stale PR-linked tasks detected ({len(pr_tasks)}):")
-            for t in pr_tasks[:20]:
+            for t in pr_tasks[:MAX_PR_DISPLAY]:
                 repo_info = f" [{t.get('repo', '')}]" if t.get("repo") else ""
                 lines.append(f"  - PR {t['pr']}{repo_info}: {t['subject']} (session: {t['session'][:8]}...)")
 
         if handover_tasks:
             lines.append(f"\nHandover tasks from previous sessions ({len(handover_tasks)}):")
-            for t in handover_tasks[:5]:
+            for t in handover_tasks[:MAX_HANDOVER_DISPLAY]:
                 topic_info = f" [{t['topic']}]" if t.get("topic") else ""
-                lines.append(f"  - {t['subject']}{topic_info} (session: {t['session'][:8]}...)")
-            lines.append("  Use TaskGet to read handover entry prompts.")
+                desc = t.get("description", "")
+                if desc:
+                    lines.append(f"\n--- Handover{topic_info} (session: {t['session'][:8]}...) ---")
+                    lines.append(desc)
+                    lines.append("--- end ---")
+                else:
+                    lines.append(f"  - {t['subject']}{topic_info} (session: {t['session'][:8]}...)")
 
         lines.append("\nConsider reviewing these tasks: complete, update, or delete as appropriate.")
 
