@@ -122,8 +122,8 @@ Create a single TaskCreate with:
 |-------|--------|
 | **subject** | `Handover: [1-line summary of primary work]` |
 | **description** | Entry prompt composed in Step 3 + source session endnote |
-| **activeForm** | `Preparing handover for next session` |
-| **metadata** | `{"source": "handover", "topic": "..."}` |
+| **activeForm** | `Handover ready for next session` |
+| **metadata** | `{"source": "handover", "topic": "...", "source_session_id": "..."}` |
 
 ### Metadata Schema
 
