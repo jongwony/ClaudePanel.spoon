@@ -47,6 +47,7 @@ A task is **skipped** when ANY condition is true:
 - `blockedBy` is non-empty (blocked by other tasks)
 - `owner` is set to a different agent
 - Description contains `**Source Session**:` pattern (handoff task — must be executed in target project)
+- Description contains `## Handover` pattern (handover task — informational context for next session, not executable)
 
 ## Execution Modes
 
@@ -67,6 +68,7 @@ A task is **skipped** when ANY condition is true:
 2. Verify eligibility:
    - If not eligible, explain why and stop.
    - If handoff task, explain it must be run in the target project and stop.
+   - If handover task, explain it contains session context for reference and is not executable work, then stop.
 3. Execute the task.
 
 ### Batch (`/task-run --all`)
@@ -119,6 +121,7 @@ Display a summary when `--all` mode completes or when 2+ tasks were executed:
 
 - Never execute tasks owned by a different agent.
 - Always skip handoff tasks (description contains `**Source Session**:`) — these must be executed in their target project directory.
+- Always skip handover tasks (description contains `## Handover`) — these are informational context for session bootstrapping, not executable work.
 - Follow existing CLAUDE.md irreversibility rules: confirm before destructive actions.
 - Prefer executing tasks in ID order (lowest first) as earlier tasks often set up context for later ones.
 - If a task's description references PR checkboxes (contains `pr:` and `checkbox_text:`), update the PR checkbox after completion per PR-Task Sync rules.

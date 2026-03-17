@@ -21,6 +21,16 @@
           }
         ]
       }
+    ],
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python3 ${CLAUDE_PLUGIN_ROOT}/hooks/stale-task-detector.py"
+          }
+        ]
+      }
     ]
   }
 }
