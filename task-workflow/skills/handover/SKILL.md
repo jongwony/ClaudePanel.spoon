@@ -19,6 +19,7 @@ Prepare a structured handover for the next Claude Code session by collecting cur
 2. Present collected information via AskUserQuestion for user selection
 3. Fetch details only for selected components, then compose an entry prompt
 4. Save as TaskCreate entry for automatic surfacing in the next session
+5. Output resume command with `CLAUDE_CODE_TASK_LIST_ID` for the next session
 
 ## Input
 
@@ -134,6 +135,25 @@ Create a single TaskCreate with:
   "source_session_id": "[current session UUID]"
 }
 ```
+
+### Step 5: Resume Instructions
+
+After TaskCreate, output the resume command so the user can start a new session with the same task list.
+
+**Obtaining the task list ID**: Run a single Bash call:
+```bash
+echo "${CLAUDE_CODE_TASK_LIST_ID:-}"
+```
+
+- **Named list** (env var is set): Inform that the task list is already shared and the next session will see it automatically (assuming the same env var is configured).
+- **UUID-based list** (env var is empty, default): The task list ID equals the current session UUID (already obtained as `source_session_id` in Step 4). Output the resume command:
+
+```
+To resume this handover in a new session:
+CLAUDE_CODE_TASK_LIST_ID=<source_session_id> claude
+```
+
+**Note**: UUID-based task directories are cleaned up at session end. The resume command must be used before starting another session in the same project, or the tasks will be lost.
 
 ## Extraction Sources
 
