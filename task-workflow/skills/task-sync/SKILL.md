@@ -3,6 +3,7 @@ name: task-sync
 description: |
   This skill should be used when the user asks to "sync tasks", "clean up tasks",
   "task-sync", "review stale tasks", "organize tasks", "check task status",
+  "rearrange dependencies", "reorder tasks",
   or wants to reconcile the current task list against codebase state.
   Usage: /task-sync [--dry-run]
 user-invocable: true
@@ -11,33 +12,34 @@ argument-hint: "[--dry-run]"
 
 # Task Sync
 
-Reconcile the current task list against codebase state by comparing each task's source type to its real-world completion signals.
+Reconcile the current task list against codebase state by comparing each task's source type to its real-world completion signals, and re-arrange dependency relationships.
 
 ## Purpose
 
 Detect and resolve drift between TaskList entries and actual codebase/PR state:
 1. Load all tasks and classify by source type
 2. Compare each task against codebase signals (git log, PR state, file changes)
-3. Present grouped results by source and relevance
-4. Batch-complete likely-completed tasks (or report-only in dry-run mode)
+3. Re-arrange dependency relationships based on current context
+4. Present grouped results by source, relevance, and dependency changes
+5. Batch-complete likely-completed tasks (or report-only in dry-run mode)
 
 ## Input
 
 - `$ARGUMENTS`: Optional flags.
   - `--dry-run`: Report only, no TaskUpdate calls.
-  - (empty): Default mode. Complete likely-completed tasks, flag uncertain ones.
+  - (empty): Default mode. Complete likely-completed tasks, re-arrange dependencies, flag uncertain ones.
 
 ## Argument Parsing
 
 Parse `$ARGUMENTS`:
 1. If `--dry-run` is present → dry-run mode (no mutations).
-2. If empty → default mode (complete likely-completed tasks).
+2. If empty → default mode (complete likely-completed tasks, apply dependency changes).
 
 ## Workflow
 
 ### Step 1: Task Loading
 
-Call `TaskList` to get all tasks. Collect task summaries (id, subject, status).
+Call `TaskList` to get all tasks. Collect task summaries (id, subject, status, blockedBy).
 
 **Guard**: If total tasks exceed 50, warn the user and ask whether to proceed or filter by status.
 
@@ -123,9 +125,48 @@ And use Grep to search for related code changes.
 - **Still-relevant**: No matching evidence found.
 - **Uncertain**: Subject is too generic to search effectively.
 
+### Step 3.5: Dependency Re-arrangement
+
+After codebase comparison, analyze and update dependency relationships among pending tasks.
+
+#### 3.5.1: Collect Current State
+
+For each pending task, record its current `blockedBy` from TaskList. If Step 2 required TaskGet calls, reuse those results to avoid redundant calls.
+
+#### 3.5.2: Stale Dependency Cleanup
+
+Identify stale dependencies — where a blocking task is already `completed`:
+- For each pending task with non-empty `blockedBy`:
+  - Check each blocking task's status
+  - If blocking task is `completed` → mark dependency as **stale**
+- **Action** (default mode): Remove stale entries from `blockedBy` via TaskUpdate
+- **Action** (dry-run): Report only
+
+#### 3.5.3: Dependency Re-analysis
+
+Re-analyze the remaining pending tasks for dependency relationships that should exist but don't, or that should be changed:
+
+1. **Load context**: Read descriptions of all still-relevant and uncertain pending tasks (reuse TaskGet results from Step 2 where available; call TaskGet for any tasks not yet loaded)
+2. **Analyze relationships**: Use your understanding of the tasks' purposes, not keyword matching, to determine:
+   - **Missing dependency**: Task B semantically requires Task A's completion, but `B.blockedBy` does not include A → **add**
+   - **Incorrect dependency**: Task A is blocked by Task B, but A should actually execute first → **swap**
+   - **Unnecessary dependency**: Task B lists Task A in blockedBy, but they are actually independent → **remove**
+3. **Skip tasks marked as likely-completed** in Step 3 — they will be completed in Step 5 and need no dependency updates
+
+#### 3.5.4: Dependency Change Set
+
+Compile all dependency changes into a change set before applying:
+
+```
+Change set:
+- [ID_X] remove blockedBy: [ID_completed] (stale — blocking task completed)
+- [ID_Y] add blockedBy: [ID_Z] (missing — Y requires Z's output)
+- [ID_A] remove blockedBy: [ID_B] (unnecessary — independent tasks)
+```
+
 ### Step 4: Grouped View
 
-Present results grouped by source type, then by relevance:
+Present results grouped by source type, then by relevance, followed by dependency changes:
 
 ```
 ## Task Sync Report
@@ -153,6 +194,16 @@ Present results grouped by source type, then by relevance:
   - [ID] subject — matching commits found
 **Still relevant**:
   - [ID] subject — no evidence found
+
+### Dependencies (N changes)
+**Stale cleared**:
+  - [ID] subject — removed blockedBy: [ID_completed] (completed)
+**Added**:
+  - [ID] subject — added blockedBy: [ID_prerequisite] (reason)
+**Removed**:
+  - [ID] subject — removed blockedBy: [ID_independent] (independent)
+**Reordered**:
+  - [ID_A] ↔ [ID_B] — dependency direction swapped (reason)
 ```
 
 Omit empty sections. Show task count per group.
@@ -163,13 +214,18 @@ Omit empty sections. Show task count per group.
 
 1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`.
 2. For `uncertain` tasks: keep as `pending`, append "(flagged by task-sync)" note to display.
-3. For `still-relevant` tasks: no action.
-4. Display summary:
+3. For `still-relevant` tasks: no action on status.
+4. Apply dependency change set from Step 3.5:
+   - Stale dependencies: `TaskUpdate(taskId, blockedBy=<updated list>)` with completed tasks removed
+   - Missing dependencies: `TaskUpdate(taskId, blockedBy=<updated list>)` with new dependencies added
+   - Unnecessary/reordered: `TaskUpdate` accordingly
+5. Display summary:
    ```
    ## Sync Summary
    - Completed: N tasks
    - Flagged (uncertain): N tasks
    - Unchanged (still relevant): N tasks
+   - Dependencies updated: N tasks (M stale cleared, K added, J removed)
    ```
 
 #### Dry-run mode (`--dry-run`)
@@ -185,5 +241,8 @@ Omit empty sections. Show task count per group.
 - If a handoff task's `target_cwd` is not accessible, mark as uncertain (do not error).
 - Task count upper bound: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
 - Respect existing CLAUDE.md irreversibility rules: TaskUpdate status changes are reversible.
-- Do not modify task descriptions or subjects — only update status.
-- In dry-run mode, perform all comparisons but make zero mutations.
+- Do not modify task descriptions or subjects — only update status and blockedBy.
+- In dry-run mode, perform all comparisons and dependency analysis but make zero mutations.
+- Dependency analysis uses LLM understanding of task relationships, not keyword matching.
+- Skip dependency re-analysis for tasks classified as likely-completed — they will be completed in Step 5.
+- When updating blockedBy, preserve any existing valid dependencies — only add/remove as identified in the change set.

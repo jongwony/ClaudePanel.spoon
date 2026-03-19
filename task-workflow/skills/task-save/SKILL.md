@@ -2,7 +2,8 @@
 name: task-save
 description: |
   This skill should be used when the user asks to "save current task", "save progress",
-  "create task from context", "task-save", or wants to capture current work state.
+  "create task from context", "task-save", "break down tasks", "decompose work",
+  or wants to capture current work state as structured tasks with dependency ordering.
   Usage: /task-save [--cwd <path>] [query]
   --cwd: Cross-project handoff (records target directory in metadata for ClaudePanel.spoon).
 user-invocable: true
@@ -11,14 +12,15 @@ argument-hint: "[--cwd <path>] [query]"
 
 # Task Save
 
-Capture current work state as a structured task entry using TaskCreate.
+Capture current work state as structured task entries with dependency ordering using TaskCreate.
 
 ## Purpose
 
 Transform conversation context into actionable task entries by:
 1. Analyzing current conversation for work state
-2. Identifying current status and pending next steps
-3. Creating a concise TaskCreate entry with status and action items
+2. Decomposing context into discrete work items when multiple are present
+3. Determining execution order and dependency relationships between work items
+4. Creating TaskCreate entries with blockedBy relationships
 
 ## Input
 
@@ -33,7 +35,49 @@ Parse `$ARGUMENTS` for `--cwd`:
 2. Remaining arguments after `--cwd <path>` become the topic filter.
 3. If `--cwd` is absent, behave as normal task-save.
 
+## Context Analysis
+
+Analyze the conversation context to identify discrete work items:
+
+1. **Scan** recent conversation for actionable work: user requests, decisions made, pending actions, blockers identified.
+2. **Classify** each work item: Is it a distinct, independently describable unit of work?
+3. **Count**: If 1 work item → single-task mode. If 2+ work items → multi-task mode.
+
+**Single-task signals**: The conversation focuses on one specific change, one file, one bug, or one feature.
+
+**Multi-task signals**: The conversation covers multiple distinct actions, a checklist, a plan with phases, or work spanning different files/components for different purposes.
+
+## Task Decomposition (Multi-Task Mode)
+
+When 2+ work items are identified:
+
+### Dependency Analysis
+
+Analyze semantic relationships between work items to determine execution order. Use your understanding of the work — not keyword matching — to judge dependencies:
+
+- **Sequential dependency**: Task B requires the output, result, or state change from Task A → `B.blockedBy = [A.id]`
+- **Shared resource dependency**: Task B modifies something that Task A creates or configures → `B.blockedBy = [A.id]`
+- **Knowledge dependency**: Task B needs information or context that Task A produces → `B.blockedBy = [A.id]`
+- **Independent**: Tasks operate on unrelated concerns → no blockedBy relationship
+
+### Ordering Rules
+
+- Earlier tasks in the dependency chain get lower IDs (created first)
+- Parallelizable tasks share the same dependency depth level
+- Circular dependencies indicate incorrect decomposition — re-analyze
+
+### Creation Sequence
+
+1. Create all tasks via TaskCreate in dependency order (roots first, dependents after)
+2. After all tasks are created, set blockedBy relationships via TaskUpdate:
+   ```
+   TaskUpdate(taskId=<dependent>, blockedBy=[<dependency1>, <dependency2>])
+   ```
+3. TaskUpdate must be called after all TaskCreate calls complete, because blockedBy references task IDs that must exist
+
 ## Output
+
+### Single-Task Mode
 
 Create a single TaskCreate with:
 
@@ -43,6 +87,26 @@ Create a single TaskCreate with:
 | **description** | `**Current Status**: ...`<br>`**Next Steps**: ...`<br>(handoff: append source session endnote) |
 | **activeForm** | Present continuous form (spinner display) |
 | **metadata** | Context fields (see below) |
+
+### Multi-Task Mode
+
+Create N TaskCreate entries, then set dependencies:
+
+| Step | Action |
+|------|--------|
+| 1 | TaskCreate for each work item (same format as single-task) |
+| 2 | TaskUpdate for each task with dependencies to set blockedBy |
+
+Each task follows the same field format as single-task mode. The description for each task should be self-contained — a reader should understand the task without needing to read other tasks in the group.
+
+After creation, display a summary:
+```
+## Task Save Summary
+Created N tasks with dependency graph:
+- [ID1] subject (root)
+- [ID2] subject (blocked by: ID1)
+- [ID3] subject (blocked by: ID1, ID2)
+```
 
 ### Metadata Schema
 
@@ -93,7 +157,10 @@ This endnote is necessary because `TaskGet` API output does not include `metadat
 ## Rules
 
 - Concise, actionable content only
-- Single focused task per invocation
+- Single-task mode when context contains one work item; multi-task mode when 2+ distinct items are present
+- Each task description must be self-contained — no cross-references to other task IDs in descriptions
+- Dependency analysis uses LLM understanding of the work, not keyword matching
 - Adapt structure to user's additional instructions if provided
-- If context insufficient, ask user for clarification before creating task
+- If context insufficient, ask user for clarification before creating tasks
 - For `--cwd`: validate the path exists before creating the task
+- Maximum 10 tasks per invocation — if more are identified, group related items
