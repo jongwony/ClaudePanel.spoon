@@ -77,7 +77,7 @@ def main():
     output = {
         "hookSpecificOutput": {
             "hookEventName": "PostToolUse",
-            "additionalContext": "PR has unchecked items. Call TaskCreate for each checklist item.",
+            "additionalContext": "PR has unchecked items. Call TaskCreate for each checklist item. If items have a natural execution order, set blockedBy relationships via TaskUpdate.",
         }
     }
     print(json.dumps(output))
