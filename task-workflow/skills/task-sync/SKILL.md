@@ -156,11 +156,13 @@ Re-analyze the remaining pending tasks for dependency relationships that should 
    - **Unnecessary dependency**: Task B lists Task A in blockedBy, but they are actually independent → **recreate** (see below)
 3. **Skip tasks marked as likely-completed** in Step 3 — they will be completed in Step 5 and need no dependency updates
 
-**Why recreate for swap/remove**: The TaskUpdate API only supports `addBlockedBy` (additive). There is no `removeBlockedBy` or `blockedBy` setter. To correct or remove dependencies, the task must be recreated:
+**Why recreate for swap/remove**: The `addBlockedBy`-only API limitation (see Step 3.5.2) means dependencies cannot be removed or replaced. To correct or remove dependencies, the task must be recreated:
 1. Complete the old task (`TaskUpdate(status="completed")`)
-2. Create a new task with the same subject and description (`TaskCreate`)
+2. Create a new task with the same subject and description (`TaskCreate`). Note: task metadata is not accessible via TaskGet and is not preserved in recreated tasks.
 3. Set correct dependencies on the new task (`TaskUpdate(addBlockedBy=[...])`)
 4. Transfer downstream blockers: for any task that had the old task in its `blockedBy`, call `TaskUpdate(taskId=<downstream>, addBlockedBy=[<new_task_id>])` to preserve the relationship
+
+**Cascading recreates**: When multiple tasks in the change set are being recreated, maintain a mapping of `old_id → new_id`. Process all completions and creations first, then apply all `addBlockedBy` updates using the new task IDs. Resolve all blockedBy references through the mapping before issuing TaskUpdate calls.
 
 #### 3.5.4: Dependency Change Set
 
@@ -227,16 +229,12 @@ Omit empty sections. Show task count per group.
 #### Default mode (no flags)
 
 1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`. Independent TaskUpdate calls for different tasks can be made in parallel.
-2. For `uncertain` tasks: keep as `pending`, append "(flagged by task-sync)" note to display.
+2. For `uncertain` tasks: keep as `pending`. Display with "(flagged by task-sync)" annotation in the sync report only — do not modify the task description.
 3. For `still-relevant` tasks: no action on status.
 4. Apply dependency change set from Step 3.5:
    - **Stale**: No action (TaskList auto-filters completed blockers from display)
    - **Add**: `TaskUpdate(taskId, addBlockedBy=[<new_dependency>])`
-   - **Recreate** (for swap/incorrect/unnecessary deps):
-     1. `TaskUpdate(taskId=<old>, status="completed")` — complete the old task
-     2. `TaskCreate(subject=<same>, description=<same>)` — create replacement task
-     3. `TaskUpdate(taskId=<new>, addBlockedBy=[<correct_deps>])` — set correct dependencies
-     4. For each downstream task that had `<old>` in its blockedBy: `TaskUpdate(taskId=<downstream>, addBlockedBy=[<new>])` — transfer the relationship
+   - **Recreate** (for swap/incorrect/unnecessary deps): Apply the recreate procedure from Step 3.5.3. For cascading recreates, resolve all references through the `old_id → new_id` mapping before issuing updates.
 5. Display summary:
    ```
    ## Sync Summary
