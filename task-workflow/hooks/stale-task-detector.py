@@ -56,7 +56,10 @@ def find_pending_tasks() -> dict[str, list[dict]]:
                             continue
                         pr_num = metadata.get("pr", "")
                         task_source = metadata.get("source", "")
-                        is_handoff = metadata.get("handoff") is True
+                        handoff_value = metadata.get("handoff")
+                        is_handoff = handoff_value is True
+                        if handoff_value and not is_handoff:
+                            log(f"Task {task_file.name}: metadata.handoff has non-boolean value: {handoff_value!r}")
                         if not pr_num and task_source != "handover" and not is_handoff:
                             continue
                         entry = {
@@ -65,17 +68,23 @@ def find_pending_tasks() -> dict[str, list[dict]]:
                             "subject": data.get("subject", "(no subject)"),
                         }
                         # Detection: this hook uses metadata.source (direct JSON access).
-                        # task-run uses description pattern "## Handover" (TaskGet API).
-                        # Handover takes priority over PR when both metadata fields present.
+                        # task-run and task-sync use description patterns (TaskGet API).
+                        # Priority: handover > handoff > PR when multiple metadata fields present.
                         if task_source == "handover":
                             entry["topic"] = metadata.get("topic", "")
                             entry["description"] = data.get("description", "")
-                            entry["mtime"] = task_file.stat().st_mtime
+                            try:
+                                entry["mtime"] = task_file.stat().st_mtime
+                            except OSError:
+                                entry["mtime"] = 0
                             result["handover"].append(entry)
                         elif is_handoff:
                             entry["target_cwd"] = metadata.get("target_cwd", "")
                             entry["source_cwd"] = metadata.get("source_cwd", "")
-                            entry["mtime"] = task_file.stat().st_mtime
+                            try:
+                                entry["mtime"] = task_file.stat().st_mtime
+                            except OSError:
+                                entry["mtime"] = 0
                             result["handoff"].append(entry)
                         else:
                             entry["pr"] = str(pr_num)
@@ -113,39 +122,48 @@ def main():
             sys.exit(0)
 
         lines = []
-        if pr_tasks:
-            lines.append(f"Stale PR-linked tasks detected ({len(pr_tasks)}):")
-            for t in pr_tasks[:MAX_PR_DISPLAY]:
-                repo_info = f" [{t.get('repo', '')}]" if t.get("repo") else ""
-                lines.append(f"  - PR {t['pr']}{repo_info}: {t['subject']} (session: {t['session'][:8]}...)")
+        try:
+            if pr_tasks:
+                lines.append(f"Stale PR-linked tasks detected ({len(pr_tasks)}):")
+                for t in pr_tasks[:MAX_PR_DISPLAY]:
+                    repo_info = f" [{t.get('repo', '')}]" if t.get("repo") else ""
+                    lines.append(f"  - PR {t['pr']}{repo_info}: {t['subject']} (session: {t['session'][:8]}...)")
+        except (KeyError, TypeError) as e:
+            log(f"Error formatting PR tasks: {e}")
 
-        if handover_tasks:
-            handover_tasks.sort(key=lambda t: t.get("mtime", 0), reverse=True)
-            lines.append(f"\nHandover tasks from previous sessions ({len(handover_tasks)}):")
-            for i, t in enumerate(handover_tasks[:MAX_HANDOVER_DISPLAY]):
-                topic_info = f" [{t['topic']}]" if t.get("topic") else ""
-                task_id = t["task_id"]
-                if i == 0:
-                    # Most recent: inject full description
-                    desc = t.get("description", "")
-                    if desc:
-                        lines.append(f"\n--- Handover{topic_info} (session: {t['session'][:8]}...) ---")
-                        lines.append(desc)
-                        lines.append(f'After reviewing, complete: TaskUpdate(taskId="{task_id}", status="completed")')
-                        lines.append("--- end ---")
+        try:
+            if handover_tasks:
+                handover_tasks.sort(key=lambda t: t.get("mtime", 0), reverse=True)
+                lines.append(f"\nHandover tasks from previous sessions ({len(handover_tasks)}):")
+                for i, t in enumerate(handover_tasks[:MAX_HANDOVER_DISPLAY]):
+                    topic_info = f" [{t['topic']}]" if t.get("topic") else ""
+                    task_id = t["task_id"]
+                    if i == 0:
+                        # Most recent: inject full description
+                        desc = t.get("description", "")
+                        if desc:
+                            lines.append(f"\n--- Handover{topic_info} (session: {t['session'][:8]}...) ---")
+                            lines.append(desc)
+                            lines.append(f'After reviewing, complete: TaskUpdate(taskId="{task_id}", status="completed")')
+                            lines.append("--- end ---")
+                        else:
+                            lines.append(f"  - {t['subject']}{topic_info} (session: {t['session'][:8]}..., id: {task_id})")
                     else:
-                        lines.append(f"  - {t['subject']}{topic_info} (session: {t['session'][:8]}..., id: {task_id})")
-                else:
-                    # Older: one-line summary to bound context window cost
-                    lines.append(f'  - {t["subject"]}{topic_info} (session: {t["session"][:8]}...) — TaskGet("{task_id}") to review')
+                        # Older: one-line summary to bound context window cost
+                        lines.append(f'  - {t["subject"]}{topic_info} (session: {t["session"][:8]}...) — TaskGet("{task_id}") to review')
+        except (KeyError, TypeError) as e:
+            log(f"Error formatting handover tasks: {e}")
 
-        if handoff_tasks:
-            handoff_tasks.sort(key=lambda t: t.get("mtime", 0), reverse=True)
-            lines.append(f"\nHandoff tasks from cross-project saves ({len(handoff_tasks)}):")
-            for t in handoff_tasks[:MAX_HANDOFF_DISPLAY]:
-                target = t.get("target_cwd", "?")
-                task_id = t["task_id"]
-                lines.append(f'  - {t["subject"]} → {target} (session: {t["session"][:8]}...) — TaskGet("{task_id}") to review')
+        try:
+            if handoff_tasks:
+                handoff_tasks.sort(key=lambda t: t.get("mtime", 0), reverse=True)
+                lines.append(f"\nHandoff tasks from cross-project saves ({len(handoff_tasks)}):")
+                for t in handoff_tasks[:MAX_HANDOFF_DISPLAY]:
+                    target = t.get("target_cwd") or "?"
+                    task_id = t["task_id"]
+                    lines.append(f'  - {t["subject"]} → {target} (session: {t["session"][:8]}...) — TaskGet("{task_id}") to review')
+        except (KeyError, TypeError) as e:
+            log(f"Error formatting handoff tasks: {e}")
 
         if pr_tasks:
             lines.append("\nReview PR-linked tasks: complete, update, or delete as appropriate.")

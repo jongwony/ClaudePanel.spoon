@@ -45,13 +45,16 @@ Filter to `status=pending` tasks only. If none exist, report "No pending tasks t
 
 ### Step 2: Source Classification
 
-Classify each pending task by its source type using a two-pass approach:
+Classify each pending task by its source type using a two-pass approach.
+
+Note: Unlike `stale-task-detector.py` which reads raw JSON metadata (direct file access), this skill uses the TaskGet API which does not expose metadata fields. Classification relies on description patterns and subject heuristics instead.
 
 **Pass 1 — Subject-based pre-classification**:
 - Subject starts with `Handover:` → likely `handover`
-- Subject contains path-like pattern (e.g., `/Users/`, `~/`) → likely `handoff`
 - Subject contains `PR #` or `pr:` → likely `pr-linked`
 - Otherwise → `unknown` (needs TaskGet)
+
+Note: Handoff tasks cannot be reliably classified from subject alone (`task-save` generates imperative verb phrase subjects, not paths). Handoff classification happens exclusively in Pass 2 via description patterns.
 
 **Pass 2 — Description-based confirmation** (only for `unknown` tasks from Pass 1):
 Call `TaskGet` for each unknown task and classify by description patterns:
@@ -95,7 +98,7 @@ And/or use Grep to search for relevant code changes.
 
 #### Handoff tasks
 
-Extract `target_cwd` from the task description (look for path after `**Source Session**:` block or in the subject line).
+Infer target directory from the task description context or subject. Note: `target_cwd` is stored in task metadata which is not accessible via TaskGet. The `**Source Session**:` endnote contains the source session UUID, not the target path. If the target cannot be inferred, ask the user or mark as `uncertain`.
 
 If target_cwd is accessible:
 ```bash
@@ -180,7 +183,7 @@ Omit empty sections. Show task count per group.
 - Never delete tasks — only complete or leave as pending.
 - If `gh` CLI is not installed, skip PR state checks gracefully (mark as uncertain).
 - If a handoff task's `target_cwd` is not accessible, mark as uncertain (do not error).
-- Task count upper bound: 50 tasks. If exceeded, warn and ask before proceeding.
+- Task count upper bound: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
 - Respect existing CLAUDE.md irreversibility rules: TaskUpdate status changes are reversible.
 - Do not modify task descriptions or subjects — only update status.
 - In dry-run mode, perform all comparisons but make zero mutations.
