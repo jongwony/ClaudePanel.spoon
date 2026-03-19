@@ -143,11 +143,13 @@ Identify stale dependencies — where a blocking task is already `completed`:
 
 **Why report-only**: The TaskUpdate API has no `removeBlockedBy` or `blockedBy` setter — only `addBlockedBy` (additive). However, stale dependencies are cosmetic: the TaskList API automatically filters out completed tasks from `blockedBy` display. So completed blockers don't affect task ordering or visibility — they only exist in raw data.
 
+**Edge case**: When all entries in a task's `blockedBy` are stale (all blocking tasks completed), the task is already effectively unblocked — TaskList will show no `blockedBy` for it. Report this as fully unblocked in the stale detection output.
+
 #### 3.5.3: Dependency Re-analysis
 
 Re-analyze the remaining pending tasks for dependency relationships that should exist but don't, or that should be changed:
 
-1. **Load context**: Read descriptions of all still-relevant and uncertain pending tasks (reuse TaskGet results from Step 2 where available; call TaskGet for any tasks not yet loaded)
+1. **Load context**: Read descriptions of all still-relevant and uncertain pending tasks (reuse TaskGet results from Step 2 where available; call TaskGet for any tasks not yet loaded). TaskGet calls for unloaded tasks can be made in parallel.
 2. **Analyze relationships**: Use your understanding of the tasks' purposes, not keyword matching, to determine:
    - **Missing dependency**: Task B semantically requires Task A's completion, but `B.blockedBy` does not include A → **add** (via `addBlockedBy`)
    - **Incorrect dependency**: Task A is blocked by Task B, but A should actually execute first → **recreate** (see below)
@@ -224,7 +226,7 @@ Omit empty sections. Show task count per group.
 
 #### Default mode (no flags)
 
-1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`.
+1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`. Independent TaskUpdate calls for different tasks can be made in parallel.
 2. For `uncertain` tasks: keep as `pending`, append "(flagged by task-sync)" note to display.
 3. For `still-relevant` tasks: no action on status.
 4. Apply dependency change set from Step 3.5:
@@ -259,6 +261,5 @@ Omit empty sections. Show task count per group.
 - Respect existing CLAUDE.md irreversibility rules: TaskUpdate status changes are reversible.
 - Do not modify task descriptions or subjects in-place — only update status and dependencies. When dependencies need correction (swap/remove), recreate the task with the same subject and description.
 - In dry-run mode, perform all comparisons and dependency analysis but make zero mutations.
-- Dependency analysis uses LLM understanding of task relationships, not keyword matching.
 - Skip dependency re-analysis for tasks classified as likely-completed — they will be completed in Step 5.
 - When updating dependencies via `addBlockedBy`, preserve any existing valid dependencies — only add new ones or recreate tasks as identified in the change set.

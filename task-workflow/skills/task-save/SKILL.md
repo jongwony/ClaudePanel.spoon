@@ -74,6 +74,7 @@ Analyze semantic relationships between work items to determine execution order. 
    TaskUpdate(taskId=<dependent>, addBlockedBy=[<dependency1>, <dependency2>])
    ```
 3. TaskUpdate must be called after all TaskCreate calls complete, because blockedBy references task IDs that must exist
+4. Independent TaskUpdate calls targeting different tasks can be made in parallel, since all task IDs already exist at this point
 
 ## Output
 
@@ -159,7 +160,6 @@ This endnote is necessary because `TaskGet` API output does not include `metadat
 - Concise, actionable content only
 - Single-task mode when context contains one work item; multi-task mode when 2+ distinct items are present
 - Each task description must be self-contained — no cross-references to other task IDs in descriptions
-- Dependency analysis uses LLM understanding of the work, not keyword matching
 - Adapt structure to user's additional instructions if provided
 - If context insufficient, ask user for clarification before creating tasks
 - For `--cwd`: validate the path exists before creating the task
