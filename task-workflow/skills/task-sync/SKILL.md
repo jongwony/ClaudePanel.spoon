@@ -3,6 +3,7 @@ name: task-sync
 description: |
   This skill should be used when the user asks to "sync tasks", "clean up tasks",
   "task-sync", "review stale tasks", "organize tasks", "check task status",
+  "rearrange dependencies", "reorder tasks",
   or wants to reconcile the current task list against codebase state.
   Usage: /task-sync [--dry-run]
 user-invocable: true
@@ -11,33 +12,34 @@ argument-hint: "[--dry-run]"
 
 # Task Sync
 
-Reconcile the current task list against codebase state by comparing each task's source type to its real-world completion signals.
+Reconcile the current task list against codebase state by comparing each task's source type to its real-world completion signals, and re-arrange dependency relationships.
 
 ## Purpose
 
 Detect and resolve drift between TaskList entries and actual codebase/PR state:
 1. Load all tasks and classify by source type
 2. Compare each task against codebase signals (git log, PR state, file changes)
-3. Present grouped results by source and relevance
-4. Batch-complete likely-completed tasks (or report-only in dry-run mode)
+3. Re-arrange dependency relationships based on current context
+4. Present grouped results by source, relevance, and dependency changes
+5. Batch-complete likely-completed tasks (or report-only in dry-run mode)
 
 ## Input
 
 - `$ARGUMENTS`: Optional flags.
   - `--dry-run`: Report only, no TaskUpdate calls.
-  - (empty): Default mode. Complete likely-completed tasks, flag uncertain ones.
+  - (empty): Default mode. Complete likely-completed tasks, re-arrange dependencies, flag uncertain ones.
 
 ## Argument Parsing
 
 Parse `$ARGUMENTS`:
 1. If `--dry-run` is present → dry-run mode (no mutations).
-2. If empty → default mode (complete likely-completed tasks).
+2. If empty → default mode (complete likely-completed tasks, apply dependency changes).
 
 ## Workflow
 
 ### Step 1: Task Loading
 
-Call `TaskList` to get all tasks. Collect task summaries (id, subject, status).
+Call `TaskList` to get all tasks. Collect task summaries (id, subject, status, blockedBy).
 
 **Guard**: If total tasks exceed 50, warn the user and ask whether to proceed or filter by status.
 
@@ -123,9 +125,65 @@ And use Grep to search for related code changes.
 - **Still-relevant**: No matching evidence found.
 - **Uncertain**: Subject is too generic to search effectively.
 
+### Step 3.5: Dependency Re-arrangement
+
+After codebase comparison, analyze and update dependency relationships among pending tasks.
+
+#### 3.5.1: Collect Current State
+
+For each pending task, record its current `blockedBy` from TaskList. If Step 2 required TaskGet calls, reuse those results to avoid redundant calls.
+
+#### 3.5.2: Stale Dependency Detection (Report-Only)
+
+Identify stale dependencies — where a blocking task is already `completed`:
+- For each pending task with non-empty `blockedBy`:
+  - Check each blocking task's status
+  - If blocking task is `completed` → mark dependency as **stale**
+- **Action**: Report only (both default and dry-run modes)
+
+**Why report-only**: The TaskUpdate API has no `removeBlockedBy` or `blockedBy` setter — only `addBlockedBy` (additive). However, stale dependencies are cosmetic: the TaskList API automatically filters out completed tasks from `blockedBy` display. So completed blockers don't affect task ordering or visibility — they only exist in raw data.
+
+**Edge case**: When all entries in a task's `blockedBy` are stale (all blocking tasks completed), the task is already effectively unblocked — TaskList will show no `blockedBy` for it. Report this as fully unblocked in the stale detection output.
+
+#### 3.5.3: Dependency Re-analysis
+
+Re-analyze the remaining pending tasks for dependency relationships that should exist but don't, or that should be changed:
+
+1. **Load context**: Read descriptions of all still-relevant and uncertain pending tasks (reuse TaskGet results from Step 2 where available; call TaskGet for any tasks not yet loaded). TaskGet calls for unloaded tasks can be made in parallel.
+2. **Analyze relationships**: Use your understanding of the tasks' purposes, not keyword matching, to determine:
+   - **Missing dependency**: Task B semantically requires Task A's completion, but `B.blockedBy` does not include A → **add** (via `addBlockedBy`)
+   - **Incorrect dependency**: Task A is blocked by Task B, but A should actually execute first → **recreate** (see below)
+   - **Unnecessary dependency**: Task B lists Task A in blockedBy, but they are actually independent → **recreate** (see below)
+3. **Skip tasks marked as likely-completed** in Step 3 — they will be completed in Step 5 and need no dependency updates
+
+**Why recreate for swap/remove**: The `addBlockedBy`-only API limitation (see Step 3.5.2) means dependencies cannot be removed or replaced. To correct or remove dependencies, the task must be recreated:
+1. Complete the old task (`TaskUpdate(status="completed")`)
+2. Create a new task with the same subject and description (`TaskCreate`). Note: task metadata is not accessible via TaskGet and is not preserved in recreated tasks.
+3. Set correct dependencies on the new task (`TaskUpdate(addBlockedBy=[...])`)
+4. Transfer downstream blockers: for any task that had the old task in its `blockedBy`, call `TaskUpdate(taskId=<downstream>, addBlockedBy=[<new_task_id>])` to preserve the relationship
+
+**Cascading recreates**: When multiple tasks in the change set are being recreated, maintain a mapping of `old_id → new_id`. Process all completions and creations first, then apply all `addBlockedBy` updates using the new task IDs. Resolve all blockedBy references through the mapping before issuing TaskUpdate calls.
+
+#### 3.5.4: Dependency Change Set
+
+Compile all dependency changes into a change set before applying:
+
+```
+Change set:
+**Stale** (report-only — auto-filtered by TaskList):
+- [ID_X] stale blockedBy: [ID_completed] (blocking task completed)
+
+**Add** (apply via addBlockedBy):
+- [ID_Y] add blockedBy: [ID_Z] (missing — Y requires Z's output)
+
+**Recreate** (complete old → create new with correct deps):
+- [ID_A] recreate without blockedBy: [ID_B] (unnecessary — independent tasks)
+- [ID_C] recreate with swapped direction: was blocked by [ID_D], should block [ID_D] instead
+```
+
 ### Step 4: Grouped View
 
-Present results grouped by source type, then by relevance:
+Present results grouped by source type, then by relevance, followed by dependency changes:
 
 ```
 ## Task Sync Report
@@ -153,6 +211,15 @@ Present results grouped by source type, then by relevance:
   - [ID] subject — matching commits found
 **Still relevant**:
   - [ID] subject — no evidence found
+
+### Dependencies (N changes)
+**Stale** (report-only — auto-filtered by TaskList):
+  - [ID] subject — stale blockedBy: [ID_completed] (completed)
+**Added** (via addBlockedBy):
+  - [ID] subject — added blockedBy: [ID_prerequisite] (reason)
+**Recreated** (old completed → new created with correct deps):
+  - [ID_old] → [ID_new] subject — removed unnecessary blockedBy: [ID_independent]
+  - [ID_old] → [ID_new] subject — swapped direction with [ID_other] (reason)
 ```
 
 Omit empty sections. Show task count per group.
@@ -161,15 +228,20 @@ Omit empty sections. Show task count per group.
 
 #### Default mode (no flags)
 
-1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`.
-2. For `uncertain` tasks: keep as `pending`, append "(flagged by task-sync)" note to display.
-3. For `still-relevant` tasks: no action.
-4. Display summary:
+1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`. Independent TaskUpdate calls for different tasks can be made in parallel.
+2. For `uncertain` tasks: keep as `pending`. Display with "(flagged by task-sync)" annotation in the sync report only — do not modify the task description.
+3. For `still-relevant` tasks: no action on status.
+4. Apply dependency change set from Step 3.5:
+   - **Stale**: No action (TaskList auto-filters completed blockers from display)
+   - **Add**: `TaskUpdate(taskId, addBlockedBy=[<new_dependency>])`
+   - **Recreate** (for swap/incorrect/unnecessary deps): Apply the recreate procedure from Step 3.5.3. For cascading recreates, resolve all references through the `old_id → new_id` mapping before issuing updates.
+5. Display summary:
    ```
    ## Sync Summary
    - Completed: N tasks
    - Flagged (uncertain): N tasks
    - Unchanged (still relevant): N tasks
+   - Dependencies: N stale (auto-filtered), K added, J recreated
    ```
 
 #### Dry-run mode (`--dry-run`)
@@ -185,5 +257,7 @@ Omit empty sections. Show task count per group.
 - If a handoff task's `target_cwd` is not accessible, mark as uncertain (do not error).
 - Task count upper bound: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
 - Respect existing CLAUDE.md irreversibility rules: TaskUpdate status changes are reversible.
-- Do not modify task descriptions or subjects — only update status.
-- In dry-run mode, perform all comparisons but make zero mutations.
+- Do not modify task descriptions or subjects in-place — only update status and dependencies. When dependencies need correction (swap/remove), recreate the task with the same subject and description.
+- In dry-run mode, perform all comparisons and dependency analysis but make zero mutations.
+- Skip dependency re-analysis for tasks classified as likely-completed — they will be completed in Step 5.
+- When updating dependencies via `addBlockedBy`, preserve any existing valid dependencies — only add new ones or recreate tasks as identified in the change set.
