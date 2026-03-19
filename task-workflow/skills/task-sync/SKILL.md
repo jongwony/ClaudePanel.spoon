@@ -133,14 +133,15 @@ After codebase comparison, analyze and update dependency relationships among pen
 
 For each pending task, record its current `blockedBy` from TaskList. If Step 2 required TaskGet calls, reuse those results to avoid redundant calls.
 
-#### 3.5.2: Stale Dependency Cleanup
+#### 3.5.2: Stale Dependency Detection (Report-Only)
 
 Identify stale dependencies — where a blocking task is already `completed`:
 - For each pending task with non-empty `blockedBy`:
   - Check each blocking task's status
   - If blocking task is `completed` → mark dependency as **stale**
-- **Action** (default mode): Remove stale entries from `blockedBy` via TaskUpdate
-- **Action** (dry-run): Report only
+- **Action**: Report only (both default and dry-run modes)
+
+**Why report-only**: The TaskUpdate API has no `removeBlockedBy` or `blockedBy` setter — only `addBlockedBy` (additive). However, stale dependencies are cosmetic: the TaskList API automatically filters out completed tasks from `blockedBy` display. So completed blockers don't affect task ordering or visibility — they only exist in raw data.
 
 #### 3.5.3: Dependency Re-analysis
 
@@ -148,10 +149,16 @@ Re-analyze the remaining pending tasks for dependency relationships that should 
 
 1. **Load context**: Read descriptions of all still-relevant and uncertain pending tasks (reuse TaskGet results from Step 2 where available; call TaskGet for any tasks not yet loaded)
 2. **Analyze relationships**: Use your understanding of the tasks' purposes, not keyword matching, to determine:
-   - **Missing dependency**: Task B semantically requires Task A's completion, but `B.blockedBy` does not include A → **add**
-   - **Incorrect dependency**: Task A is blocked by Task B, but A should actually execute first → **swap**
-   - **Unnecessary dependency**: Task B lists Task A in blockedBy, but they are actually independent → **remove**
+   - **Missing dependency**: Task B semantically requires Task A's completion, but `B.blockedBy` does not include A → **add** (via `addBlockedBy`)
+   - **Incorrect dependency**: Task A is blocked by Task B, but A should actually execute first → **recreate** (see below)
+   - **Unnecessary dependency**: Task B lists Task A in blockedBy, but they are actually independent → **recreate** (see below)
 3. **Skip tasks marked as likely-completed** in Step 3 — they will be completed in Step 5 and need no dependency updates
+
+**Why recreate for swap/remove**: The TaskUpdate API only supports `addBlockedBy` (additive). There is no `removeBlockedBy` or `blockedBy` setter. To correct or remove dependencies, the task must be recreated:
+1. Complete the old task (`TaskUpdate(status="completed")`)
+2. Create a new task with the same subject and description (`TaskCreate`)
+3. Set correct dependencies on the new task (`TaskUpdate(addBlockedBy=[...])`)
+4. Transfer downstream blockers: for any task that had the old task in its `blockedBy`, call `TaskUpdate(taskId=<downstream>, addBlockedBy=[<new_task_id>])` to preserve the relationship
 
 #### 3.5.4: Dependency Change Set
 
@@ -159,9 +166,15 @@ Compile all dependency changes into a change set before applying:
 
 ```
 Change set:
-- [ID_X] remove blockedBy: [ID_completed] (stale — blocking task completed)
+**Stale** (report-only — auto-filtered by TaskList):
+- [ID_X] stale blockedBy: [ID_completed] (blocking task completed)
+
+**Add** (apply via addBlockedBy):
 - [ID_Y] add blockedBy: [ID_Z] (missing — Y requires Z's output)
-- [ID_A] remove blockedBy: [ID_B] (unnecessary — independent tasks)
+
+**Recreate** (complete old → create new with correct deps):
+- [ID_A] recreate without blockedBy: [ID_B] (unnecessary — independent tasks)
+- [ID_C] recreate with swapped direction: was blocked by [ID_D], should block [ID_D] instead
 ```
 
 ### Step 4: Grouped View
@@ -196,14 +209,13 @@ Present results grouped by source type, then by relevance, followed by dependenc
   - [ID] subject — no evidence found
 
 ### Dependencies (N changes)
-**Stale cleared**:
-  - [ID] subject — removed blockedBy: [ID_completed] (completed)
-**Added**:
+**Stale** (report-only — auto-filtered by TaskList):
+  - [ID] subject — stale blockedBy: [ID_completed] (completed)
+**Added** (via addBlockedBy):
   - [ID] subject — added blockedBy: [ID_prerequisite] (reason)
-**Removed**:
-  - [ID] subject — removed blockedBy: [ID_independent] (independent)
-**Reordered**:
-  - [ID_A] ↔ [ID_B] — dependency direction swapped (reason)
+**Recreated** (old completed → new created with correct deps):
+  - [ID_old] → [ID_new] subject — removed unnecessary blockedBy: [ID_independent]
+  - [ID_old] → [ID_new] subject — swapped direction with [ID_other] (reason)
 ```
 
 Omit empty sections. Show task count per group.
@@ -216,16 +228,20 @@ Omit empty sections. Show task count per group.
 2. For `uncertain` tasks: keep as `pending`, append "(flagged by task-sync)" note to display.
 3. For `still-relevant` tasks: no action on status.
 4. Apply dependency change set from Step 3.5:
-   - Stale dependencies: `TaskUpdate(taskId, blockedBy=<updated list>)` with completed tasks removed
-   - Missing dependencies: `TaskUpdate(taskId, blockedBy=<updated list>)` with new dependencies added
-   - Unnecessary/reordered: `TaskUpdate` accordingly
+   - **Stale**: No action (TaskList auto-filters completed blockers from display)
+   - **Add**: `TaskUpdate(taskId, addBlockedBy=[<new_dependency>])`
+   - **Recreate** (for swap/incorrect/unnecessary deps):
+     1. `TaskUpdate(taskId=<old>, status="completed")` — complete the old task
+     2. `TaskCreate(subject=<same>, description=<same>)` — create replacement task
+     3. `TaskUpdate(taskId=<new>, addBlockedBy=[<correct_deps>])` — set correct dependencies
+     4. For each downstream task that had `<old>` in its blockedBy: `TaskUpdate(taskId=<downstream>, addBlockedBy=[<new>])` — transfer the relationship
 5. Display summary:
    ```
    ## Sync Summary
    - Completed: N tasks
    - Flagged (uncertain): N tasks
    - Unchanged (still relevant): N tasks
-   - Dependencies updated: N tasks (M stale cleared, K added, J removed)
+   - Dependencies: N stale (auto-filtered), K added, J recreated
    ```
 
 #### Dry-run mode (`--dry-run`)
@@ -241,8 +257,8 @@ Omit empty sections. Show task count per group.
 - If a handoff task's `target_cwd` is not accessible, mark as uncertain (do not error).
 - Task count upper bound: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
 - Respect existing CLAUDE.md irreversibility rules: TaskUpdate status changes are reversible.
-- Do not modify task descriptions or subjects — only update status and blockedBy.
+- Do not modify task descriptions or subjects in-place — only update status and dependencies. When dependencies need correction (swap/remove), recreate the task with the same subject and description.
 - In dry-run mode, perform all comparisons and dependency analysis but make zero mutations.
 - Dependency analysis uses LLM understanding of task relationships, not keyword matching.
 - Skip dependency re-analysis for tasks classified as likely-completed — they will be completed in Step 5.
-- When updating blockedBy, preserve any existing valid dependencies — only add/remove as identified in the change set.
+- When updating dependencies via `addBlockedBy`, preserve any existing valid dependencies — only add new ones or recreate tasks as identified in the change set.

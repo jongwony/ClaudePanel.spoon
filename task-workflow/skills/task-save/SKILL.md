@@ -71,7 +71,7 @@ Analyze semantic relationships between work items to determine execution order. 
 1. Create all tasks via TaskCreate in dependency order (roots first, dependents after)
 2. After all tasks are created, set blockedBy relationships via TaskUpdate:
    ```
-   TaskUpdate(taskId=<dependent>, blockedBy=[<dependency1>, <dependency2>])
+   TaskUpdate(taskId=<dependent>, addBlockedBy=[<dependency1>, <dependency2>])
    ```
 3. TaskUpdate must be called after all TaskCreate calls complete, because blockedBy references task IDs that must exist
 
