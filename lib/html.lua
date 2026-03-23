@@ -209,7 +209,7 @@ function M.generateHTML(opts)
     local memoryData = opts.memoryData
     local currentMode = opts.currentMode
     local cwdGroups = opts.cwdGroups
-    local cwdCollapseState = opts.cwdCollapseState
+    local cwdExpandState = opts.cwdExpandState
     local teamData = opts.teamData
     local snoozeData = opts.snoozeData or {}
 
@@ -1447,9 +1447,19 @@ function M.generateHTML(opts)
             return Array.from(cwdList.querySelectorAll('.cwd-group:not(.collapsed) .task:not(.hidden)'));
         }
 
+        function expandFirstCollapsedCwdGroup() {
+            var cwdList = document.getElementById('cwdList');
+            if (!cwdList) return;
+            var collapsed = cwdList.querySelector('.cwd-group.collapsed');
+            if (collapsed) {
+                var header = collapsed.querySelector('.cwd-group-header');
+                if (header) header.click();
+            }
+        }
+
         function updateCwdFocus(newIndex) {
             var tasks = getVisibleCwdTasks();
-            if (tasks.length === 0) return;
+            if (tasks.length === 0) { expandFirstCollapsedCwdGroup(); return; }
             newIndex = Math.max(0, Math.min(newIndex, tasks.length - 1));
             tasks.forEach(function(t) { t.classList.remove('focused'); });
             cwdFocusedIndex = newIndex;
@@ -1522,6 +1532,12 @@ function M.generateHTML(opts)
                     }
                 });
                 group.style.display = (visibleInGroup > 0 || !normalizedQuery) ? '' : 'none';
+                // Auto-expand groups with matching tasks during search
+                if (normalizedQuery && visibleInGroup > 0) {
+                    group.classList.remove('collapsed');
+                } else if (!normalizedQuery && !group.dataset.expanded) {
+                    group.classList.add('collapsed');
+                }
             });
             cwdFocusedIndex = -1;
         }
@@ -2032,16 +2048,17 @@ function M.generateHTML(opts)
     html = html .. '    <div id="cwdList" class="memory-list">\n'
     if cwdGroups and #cwdGroups > 0 then
         for _, group in ipairs(cwdGroups) do
-            local collapsed = cwdCollapseState and cwdCollapseState[group.cwd]
-            local collapsedClass = collapsed and ' collapsed' or ''
-            local chevron = collapsed and '&#9654;' or '&#9660;'
+            local expanded = cwdExpandState and cwdExpandState[group.cwd]
+            local collapsedClass = expanded and '' or ' collapsed'
+            local chevron = expanded and '&#9660;' or '&#9654;'
             -- Count active tasks (non-completed)
             local activeCount = 0
             for _, t in ipairs(group.tasks) do
                 if t.status ~= "completed" then activeCount = activeCount + 1 end
             end
             local cwdJson = utils.jsonEncodeString(group.cwd)
-            html = html .. '        <div class="cwd-group' .. collapsedClass .. '">\n'
+            local expandedAttr = expanded and ' data-expanded="true"' or ''
+            html = html .. '        <div class="cwd-group' .. collapsedClass .. '"' .. expandedAttr .. '>\n'
             html = html .. "            <div class='cwd-group-header' onclick='toggleCwdGroup(" .. cwdJson .. ")'>\n"
             html = html .. '                <span class="cwd-group-chevron">' .. chevron .. '</span>\n'
             html = html .. '                <span class="cwd-group-name" title="' .. utils.escapeHtml(group.cwd) .. '">' .. utils.escapeHtml(group.projectName) .. '</span>\n'
