@@ -174,8 +174,9 @@ function M.generateTaskCard(task, utils, options)
     if descriptionHtml ~= '' then
         h = h .. '        ' .. descriptionHtml .. '\n'
     end
+    local sessionJson = utils.jsonEncodeString(task._sessionId or '')
     h = h .. '        <div class="task-meta">#' .. utils.escapeHtml(tostring(task.id))
-        .. ' <span class="session-badge" title="' .. utils.escapeHtml(task._sessionId) .. '">'
+        .. ' <span class="session-badge" title="' .. utils.escapeHtml('CLAUDE_CODE_TASK_LIST_ID=' .. (task._sessionId or '')) .. '" onclick=\'copySessionEnv(' .. sessionJson .. ', this); event.stopPropagation();\'>'
         .. utils.escapeHtml(task._sessionId) .. '</span>' .. ownerHtml .. '</div>\n'
     if metadataHtml ~= '' then
         h = h .. '        <div class="task-meta">' .. metadataHtml .. '</div>\n'
@@ -531,6 +532,12 @@ function M.generateHTML(opts)
             padding: 2px 6px;
             border-radius: 4px;
             color: #888;
+            cursor: pointer;
+            transition: background 0.15s;
+        }
+        .session-badge:hover {
+            background: rgba(255, 255, 255, 0.2);
+            color: #aaa;
         }
         .owner-badge {
             font-size: 10px;
@@ -1226,6 +1233,24 @@ function M.generateHTML(opts)
                 action: 'launchClaudeWithSession',
                 sessionId: sessionId
             });
+        }
+
+        function copySessionEnv(sessionId, el) {
+            window.webkit.messageHandlers.taskBridge.postMessage({
+                action: 'copySessionEnv',
+                sessionId: sessionId
+            });
+            if (el._copying) return;
+            el._copying = true;
+            var original = el.textContent;
+            var w = el.offsetWidth;
+            el.style.minWidth = w + 'px';
+            el.textContent = 'Copied!';
+            setTimeout(function() {
+                el.textContent = original;
+                el.style.minWidth = '';
+                el._copying = false;
+            }, 1500);
         }
 
         function showQuickUpdateDialog() {

@@ -259,6 +259,11 @@ local function actionHandler(action, params)
         obj:launchClaudeWithCwd(params.sessionId, params.cwd)
     elseif action == "launchClaudeWithSession" then
         obj:launchClaudeWithSession(params.sessionId)
+    elseif action == "copySessionEnv" then
+        local val = "CLAUDE_CODE_TASK_LIST_ID=" .. (params.sessionId or "")
+        if not hs.pasteboard.setContents(val) then
+            log("copySessionEnv: pasteboard write failed")
+        end
     elseif action == "showQuickUpdateDialog" then
         obj:showQuickTaskDialog()
     elseif action == "launchClaudeHandoff" then
