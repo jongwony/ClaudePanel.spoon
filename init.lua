@@ -89,7 +89,7 @@ end
 local memoryCache = { data = {}, sessionId = nil }
 local teamCache   = { data = nil, sessionId = nil }
 local currentMode = 'search' -- tracks JS mode state for refresh persistence
-local cwdCollapseState = {} -- cwd path -> true/nil (collapsed state)
+local cwdExpandState = {} -- cwd path -> true/nil (expanded state; default is collapsed)
 local lastCwdCacheSize = 0 -- track CWD cache size for persistence trigger
 local snoozeTimer = nil
 local caffeineWatcher = nil
@@ -173,7 +173,7 @@ local function refreshWebView()
         memoryData = memoryData,
         currentMode = currentMode,
         cwdGroups = cwdGroups,
-        cwdCollapseState = cwdCollapseState,
+        cwdExpandState = cwdExpandState,
         teamData = getTeamData(),
         namedTeams = teamsModule.listNamedTeams(utils, log),
         snoozeData = getSnoozeData(),
@@ -273,7 +273,7 @@ local function actionHandler(action, params)
         obj:openMemoryInEditor(params.projectHash, params.filename)
     elseif action == "toggleCwdGroup" then
         if params.cwd then
-            cwdCollapseState[params.cwd] = not cwdCollapseState[params.cwd] or nil
+            cwdExpandState[params.cwd] = not cwdExpandState[params.cwd] or nil
             refreshWebView()
         end
     elseif action == "snoozeTask" then

@@ -213,7 +213,8 @@ function M.groupTasksByCwd(allTasks)
             if cwd == "Unknown" then
                 projectName = "Unknown"
             else
-                projectName = cwd:match("[^/]+$") or cwd
+                -- 2-segment: parent/basename (e.g., "private/ClaudePanels.spoon")
+                projectName = cwd:match("([^/]+/[^/]+)$") or cwd:match("[^/]+$") or cwd
             end
             table.insert(groups, {
                 cwd = cwd,
