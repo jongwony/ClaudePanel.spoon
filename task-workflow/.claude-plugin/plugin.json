@@ -1,7 +1,7 @@
 {
   "name": "task-workflow",
-  "description": "Task lifecycle management: save conversation context as tasks, execute pending tasks sequentially, prepare session handovers, and sync task state against codebase",
-  "version": "1.9.0",
+  "description": "Task lifecycle management: unified task execution (run, sync, handover modes) and task creation from conversation context",
+  "version": "2.0.0",
   "author": {
     "name": "Jongwon Choi",
     "url": "https://github.com/jongwony"
