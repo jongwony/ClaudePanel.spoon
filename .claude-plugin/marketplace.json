@@ -1,9 +1,9 @@
 {
-  "name": "claudetasks-marketplace",
+  "name": "ClaudePanel",
   "description": "Claude Code plugins for task management",
   "owner": {
     "name": "jongwony",
-    "url": "https://github.com/jongwony"
+    "url": "https://github.com/jongwony/ClaudePanel.spoon"
   },
   "plugins": [
     {
