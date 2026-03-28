@@ -9,7 +9,7 @@ description: |
   Usage: /ship
 user-invocable: true
 argument-hint: ""
-allowed-tools: Bash(git checkout --branch:*), Bash(git add:*), Bash(git status:*), Bash(git push:*), Bash(git commit:*), Bash(gh pr create:*), Bash(gh pr view:*)
+allowed-tools: Bash(git checkout --branch:*), Bash(git add:*), Bash(git status:*), Bash(git push:*), Bash(git commit:*), Bash(gh pr create:*), Bash(gh pr view:*), TaskCreate
 ---
 
 # Ship
@@ -40,7 +40,7 @@ After PR creation:
 
 1. Run `gh pr view --json number,body,url` to read the created PR
 2. Parse the PR body for the `## Test plan` section
-3. Extract all `- [ ]` (unchecked) items from that section
+3. Extract all top-level `- [ ]` (unchecked) items from that section. Ignore indented (nested) checklist items — only lines starting with `- [ ]` at the section's base indentation level.
 4. Stop at the "Generated with" footer line or end of body
 5. Ignore `- [x]` items (already completed)
 

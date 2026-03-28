@@ -281,7 +281,7 @@ Omit empty sections. Show task count per group.
 #### Default mode (no `--dry-run`)
 
 1. For each `likely-completed` task: `TaskUpdate(taskId, status="completed")`. Independent calls can be made in parallel.
-2. For `uncertain` tasks: keep as `pending`. Display with "(flagged by task-sync)" annotation in the report only — do not modify the task description.
+2. For `uncertain` tasks: keep as `pending`. Display with "(flagged by sync)" annotation in the report only — do not modify the task description.
 3. For `still-relevant` tasks: no action.
 4. Display summary:
    ```
