@@ -55,11 +55,11 @@ Detection: backtick-wrapped content matching executable patterns — shell comma
 Task behavior: can be executed by `/task-run --all` in the current or next session.
 
 **Priority 2 — `ci`**: Item depends on CI pipeline results.
-Detection: contains "CI", "pipeline", "workflow", "review pass", "GitHub Actions" without an executable command.
+Detection: contains "CI", "pipeline", "workflow", "review pass", "GitHub Actions" AND no backtick-wrapped executable command matching Priority 1 patterns.
 Task behavior: verify via `gh run list` or `gh pr checks` after push.
 
 **Priority 3 — `post-merge`**: Item requires merge or a separate session to verify.
-Detection: contains keywords indicating post-merge context — new session, reload, restart, next session, after merge, plugin reload, routing, deploy (in any language matching the PR body).
+Detection: no executable command (Priority 1) AND no CI keywords (Priority 2) AND contains keywords indicating post-merge context — new session, reload, restart, next session, after merge, plugin reload, routing, deploy (in any language matching the PR body).
 Task behavior: carried to next session as a handover-style task.
 
 **Priority 4 — `manual`** (default): Item requires human interaction or visual confirmation.
@@ -78,7 +78,7 @@ The user can:
 
 ### Phase 5: Create Tasks
 
-For each confirmed item, call `TaskCreate`:
+For each confirmed item (using the user's final classifications after any reclassification in Phase 4), call `TaskCreate`:
 
 | Field | Value |
 |-------|-------|
@@ -91,6 +91,8 @@ For each confirmed item, call `TaskCreate`:
 - No blockedBy relationships between items (they are independent checklist items)
 
 **Batch creation**: TaskCreate calls for independent tasks can be made in parallel.
+
+**Failure handling**: If any TaskCreate call fails during batch creation, report partial results — list successfully registered items with their task IDs and failed items with error reason. Do not silently continue; the user must know which items were not tracked.
 
 After task creation, output a summary showing the count per type with a brief note on each type's expected handling (executable: run now, ci: await pipeline, post-merge: verify after merge, manual: user checks).
 
