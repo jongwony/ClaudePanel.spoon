@@ -5,6 +5,7 @@ description: |
   "work through tasks", "do my tasks", "task-run", "sync tasks", "clean up tasks",
   "review stale tasks", "check task status", "handover session", "prepare next session",
   "save handover", "session handover", "hand off tasks",
+  "rearrange dependencies", "reorder tasks",
   or wants to execute, sync, or handover tasks from the current session's task list.
   Usage: /task-run [--all] [--sync [--dry-run]] [--handover [query]]
 user-invocable: true
@@ -78,6 +79,7 @@ Call `TaskGet` for each unknown task and classify by description patterns:
 - Contains `**Source Session**:` → `handoff` (skip — must be in target project)
 - Contains `pr:` AND `checkbox_text:` → `pr-linked`
 - Otherwise → `general`
+- If `TaskGet` fails for a task (deleted, transient error): classify as `uncertain` and include the error in the sync report
 
 This deferred N+1 approach minimizes TaskGet calls for well-named tasks.
 
@@ -175,8 +177,10 @@ For each source type, apply the appropriate comparison method:
 #### PR-linked tasks
 
 ```bash
-gh pr list --state all --json number,state,mergedAt,closedAt --limit 100
+gh pr list --state all --json number,state --limit 100
 ```
+
+Same command as Pre-flight Sync step 3 — classification rules are shared.
 
 - Match task's PR number against the list.
 - **Likely-completed**: PR state is `MERGED` or `CLOSED`.
@@ -234,9 +238,7 @@ Identify stale dependencies — where a blocking task is already `completed`:
   - If blocking task is `completed` → mark dependency as **stale**
 - **Action**: Report only (both default and dry-run modes). No dependency re-arrangement, no recreate pattern.
 
-**Why report-only**: The TaskUpdate API has no `removeBlockedBy` or `blockedBy` setter — only `addBlockedBy` (additive). However, stale dependencies are cosmetic: the TaskList API automatically filters out completed tasks from `blockedBy` display. So completed blockers don't affect task ordering or visibility — they only exist in raw data.
-
-**Edge case**: When all entries in a task's `blockedBy` are stale (all blocking tasks completed), the task is already effectively unblocked — TaskList will show no `blockedBy` for it. Report this as fully unblocked in the stale detection output.
+**Note**: Report only — the TaskUpdate API only supports `addBlockedBy` (no remove). TaskList auto-filters completed blockers at runtime, so stale dependencies are cosmetic.
 
 ### Step 4: Grouped Report
 
@@ -415,22 +417,15 @@ Create a single TaskCreate with:
 
 ### Step 5: Resume Instructions
 
-After TaskCreate, output the resume command so the user can start a new session with the same task list.
+After TaskCreate, output resume instructions:
 
-**Obtaining the task list ID**: Run a single Bash call:
-```bash
-echo "${CLAUDE_CODE_TASK_LIST_ID:-}"
-```
-
-- **Named list** (env var is set): Inform that the task list is already shared and the next session will see it automatically (assuming the same env var is configured).
-- **UUID-based list** (env var is empty, default): The task list ID equals the current session UUID (already obtained as `source_session_id` in Step 4). Output the resume command:
-
-```
-To resume this handover in a new session:
-CLAUDE_CODE_TASK_LIST_ID=<source_session_id> claude
-```
-
-**Note**: UUID-based task directories are cleaned up at session end. The resume command must be used before starting another session in the same project, or the tasks will be lost.
+1. Run `echo "${CLAUDE_CODE_TASK_LIST_ID:-}"` to check for a named list.
+2. If the env var is set: inform the user the next session inherits it automatically.
+3. If empty: use `source_session_id` from Step 4 as the task list ID:
+   ```
+   CLAUDE_CODE_TASK_LIST_ID=<source_session_id> claude
+   ```
+   Note: UUID-based task directories are cleaned up at session end.
 
 ---
 
@@ -461,18 +456,23 @@ Display a summary when `--all` mode completes or when 2+ tasks were executed:
 
 ## Rules
 
+### All Modes
 - Never delete tasks — only complete or leave as pending.
 - Never execute tasks owned by a different agent.
-- Always skip handoff tasks (description contains `**Source Session**:`) — these must be executed in their target project directory.
-- Always skip handover tasks (description contains `## Handover`) — these are informational context for session bootstrapping, not executable work.
+- Eligibility Filter rules (handoff/handover skip, owner check) apply to all execution modes.
 - Follow existing CLAUDE.md irreversibility rules: confirm before destructive actions.
 - Prefer executing tasks in ID order (lowest first) as earlier tasks often set up context for later ones.
 - If a task's description references PR checkboxes (contains `pr:` and `checkbox_text:`), update the PR checkbox after completion per PR-Task Sync rules.
 - Do not modify task descriptions or subjects — only update status.
 - Skip `gh` gracefully if not installed (mark PR-related items as uncertain).
+- If the user requests dependency re-arrangement or task reordering, inform them that this feature was removed in v2. Use manual `TaskUpdate` with `addBlockedBy` to manage dependencies.
+
+### Sync Mode
 - In `--sync --dry-run` mode, perform all comparisons but make zero mutations.
 - Task count upper bound for sync: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
-- Handover: always call AskUserQuestion for component selection — never auto-include all data without user choice.
-- Handover: respect user selection exactly — do not add unselected components to the entry prompt.
-- Handover: include source_session_id in both metadata and description endnote for traceability.
-- Handover: do not call TaskUpdate or TaskDelete — handover is read-only collection plus a single TaskCreate.
+
+### Handover Mode
+- Always call AskUserQuestion for component selection — never auto-include all data without user choice.
+- Respect user selection exactly — do not add unselected components to the entry prompt.
+- Include source_session_id in both metadata and description endnote for traceability.
+- Do not call TaskUpdate or TaskDelete — handover is read-only collection plus a single TaskCreate.
