@@ -472,7 +472,7 @@ Display a summary when `--all` mode completes or when 2+ tasks were executed:
 - Task count upper bound for sync: 50 total tasks (all statuses, before pending filter). If exceeded, warn and ask before proceeding.
 
 ### Handover Mode
-- Always call AskUserQuestion for component selection — never auto-include all data without user choice.
-- Respect user selection exactly — do not add unselected components to the entry prompt.
-- Include source_session_id in both metadata and description endnote for traceability.
-- Do not call TaskUpdate or TaskDelete — handover is read-only collection plus a single TaskCreate.
+- Handover: always call AskUserQuestion for component selection — never auto-include all data without user choice.
+- Handover: respect user selection exactly — do not add unselected components to the entry prompt.
+- Handover: include source_session_id in both metadata and description endnote for traceability.
+- Handover: do not call TaskUpdate or TaskDelete — handover is read-only collection plus a single TaskCreate.

@@ -57,6 +57,7 @@ Task behavior: can be executed by `/task-run --all` in the current or next sessi
 **Priority 2 — `ci`**: Item depends on CI pipeline results.
 Detection: contains "CI", "pipeline", "workflow", "review pass", "GitHub Actions" AND no backtick-wrapped executable command matching Priority 1 patterns.
 Task behavior: verify via `gh run list` or `gh pr checks` after push.
+Default: excluded from task creation (CI results are auto-verifiable). Shown in Phase 4 for transparency; user can opt-in.
 
 **Priority 3 — `post-merge`**: Item requires merge or a separate session to verify.
 Detection: no executable command (Priority 1) AND no CI keywords (Priority 2) AND contains keywords indicating post-merge context — new session, reload, restart, next session, after merge, plugin reload, routing, deploy (in any language matching the PR body).
@@ -68,7 +69,7 @@ Task behavior: surfaced in ClaudePanel for user to manually check off.
 
 ### Phase 4: User Confirmation
 
-Present the classified items via `AskUserQuestion`. Group items by type, showing the count per type and listing each item under its classification.
+Present the classified items via `AskUserQuestion`. Group items by type, showing the count per type and listing each item under its classification. ci-type items are shown separately as excluded by default — CI results are auto-verifiable via `gh pr checks`. The user can include specific ci items if manual tracking is desired.
 
 The user can:
 - Confirm as-is
@@ -78,7 +79,7 @@ The user can:
 
 ### Phase 5: Create Tasks
 
-For each confirmed item (using the user's final classifications after any reclassification in Phase 4), call `TaskCreate`:
+For each confirmed item (using the user's final classifications after any reclassification in Phase 4), call `TaskCreate`. ci-type items excluded by default. Only create ci tasks if the user explicitly opted them in during Phase 4.
 
 | Field | Value |
 |-------|-------|
@@ -92,7 +93,10 @@ For each confirmed item (using the user's final classifications after any reclas
 
 **Batch creation**: TaskCreate calls for independent tasks can be made in parallel.
 
-**Failure handling**: If any TaskCreate call fails during batch creation, report partial results — list successfully registered items with their task IDs and failed items with error reason. Do not silently continue; the user must know which items were not tracked.
+**Failure handling**: If any TaskCreate call fails during batch creation, report partial results:
+- List successfully registered items with their task IDs
+- List failed items with error reason
+- Do not silently continue — the user must know which items were not tracked
 
 After task creation, output a summary showing the count per type with a brief note on each type's expected handling (executable: run now, ci: await pipeline, post-merge: verify after merge, manual: user checks).
 
