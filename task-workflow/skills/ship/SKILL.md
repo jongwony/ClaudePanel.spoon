@@ -14,11 +14,11 @@ allowed-tools: Bash(git checkout --branch:*), Bash(git add:*), Bash(git status:*
 
 # Ship
 
-Commit, push, create a pull request, then register test plan checklist items as classified tasks.
+Commit, push, create a pull request, then auto-register the immediately-actionable test plan checklist items as tasks. Deferred items (`ci`, `post-merge`) are summarized, not tracked.
 
 ## Purpose
 
-Extends the standard commit-push-pr workflow with task registration: after PR creation, extract `- [ ]` items from the PR body, classify each by type, confirm with the user, and create tasks with metadata linking back to the PR.
+Extends the standard commit-push-pr workflow with task registration: after PR creation, extract `- [ ]` items from the PR body, classify each by type, and automatically create tasks for the immediately-actionable items with metadata linking back to the PR. Deferred items (`ci`, `post-merge`) are reported in the closing summary only — not tracked as tasks, because linking a task to a later session requires belatedly wiring up `CLAUDE_CODE_TASK_LIST_ID`, which defeats the purpose of leaving only here-and-now work in the task list.
 
 ## Workflow
 
@@ -48,47 +48,36 @@ After PR creation:
 
 ### Phase 3: Classify Items
 
-Classify each extracted item into one of four types, applying rules in priority order:
+Classify each extracted item into one of four types, applying rules in priority order. The type determines the outcome: **immediate** types (`executable`, `manual`) become tracked tasks; **deferred** types (`ci`, `post-merge`) appear in the closing summary only.
 
 **Priority 1 — `executable`**: Item contains a command in backticks that Claude can run.
 Detection: backtick-wrapped content matching executable patterns — shell commands (`lua`, `node`, `python`, `grep`, `echo`), slash commands (`/verify`, `/task-run`), or CLI invocations.
-Task behavior: can be executed by `/task-run --all` in the current or next session.
+Outcome: **tracked task** — can be executed by `/task-run --all` in the current or next session.
 
 **Priority 2 — `ci`**: Item depends on CI pipeline results.
 Detection: contains "CI", "pipeline", "workflow", "review pass", "GitHub Actions" AND no backtick-wrapped executable command matching Priority 1 patterns.
-Task behavior: verify via `gh run list` or `gh pr checks` after push.
-Default: excluded from task creation (CI results are auto-verifiable). Shown in Phase 4 for transparency; user can opt-in.
+Outcome: **summary only** — never created as a task. CI results are auto-verifiable via `gh pr checks` / `gh run list`; listed in the closing summary for transparency.
 
 **Priority 3 — `post-merge`**: Item requires merge or a separate session to verify.
 Detection: no executable command (Priority 1) AND no CI keywords (Priority 2) AND contains keywords indicating post-merge context — new session, reload, restart, next session, after merge, plugin reload, routing, deploy (in any language matching the PR body).
-Task behavior: carried to next session as a handover-style task.
+Outcome: **summary only** — never created as a task. Verifying it would require a separate/later session and after-the-fact `CLAUDE_CODE_TASK_LIST_ID` wiring; listed in the closing summary instead.
 
 **Priority 4 — `manual`** (default): Item requires human interaction or visual confirmation.
 Detection: none of the above patterns match. Typically UI checks, visual verification, keyboard interaction.
-Task behavior: surfaced in ClaudePanel for user to manually check off.
+Outcome: **tracked task** — surfaced in ClaudePanel and actionable in the current session: resolvable by Claude via browser-use / computer-use, or checked off manually by the user.
 
-### Phase 4: User Confirmation
+### Phase 4: Create Tasks & Summarize
 
-Present the classified items via `AskUserQuestion`. Group items by type, showing the count per type and listing each item under its classification. ci-type items are shown separately as excluded by default — CI results are auto-verifiable via `gh pr checks`. The user can include specific ci items if manual tracking is desired.
-
-The user can:
-- Confirm as-is
-- Reclassify specific items (e.g., "move item 3 to post-merge")
-- Remove items they don't want tracked
-- Cancel task registration entirely
-
-### Phase 5: Create Tasks
-
-For each confirmed item (using the user's final classifications after any reclassification in Phase 4), call `TaskCreate`. ci-type items excluded by default. Only create ci tasks if the user explicitly opted them in during Phase 4.
+For each `executable` and `manual` item, call `TaskCreate`. Creation is automatic — there is no user confirmation step. The classification fully determines the outcome, so no choice needs to be presented. `ci` and `post-merge` items are never created as tasks; they appear in the closing summary only.
 
 | Field | Value |
 |-------|-------|
 | **subject** | Checklist text (cleaned, without leading `- [ ]`) |
-| **description** | `pr: N\ncheckbox_text: [original text]\ntype: [executable|ci|post-merge|manual]` |
+| **description** | `pr: N\ncheckbox_text: [original text]\ntype: [executable|manual]` |
 | **metadata** | `{"source": "pr-checklist", "pr": N, "type": "[type]", "checkbox_text": "[text]"}` |
 
 **Ordering and dependencies**:
-- Create `executable` tasks first (lowest IDs), then `ci`, then `post-merge`, then `manual`
+- Create `executable` tasks first (lowest IDs), then `manual`
 - No blockedBy relationships between items (they are independent checklist items)
 
 **Batch creation**: TaskCreate calls for independent tasks can be made in parallel.
@@ -98,7 +87,9 @@ For each confirmed item (using the user's final classifications after any reclas
 - List failed items with error reason
 - Do not silently continue — the user must know which items were not tracked
 
-After task creation, output a summary showing the count per type with a brief note on each type's expected handling (executable: run now, ci: await pipeline, post-merge: verify after merge, manual: user checks).
+After task creation, output a summary:
+- **Created tasks** — count, with a handling note per type (executable: run now; manual: resolve via browser-use / computer-use, or user check in ClaudePanel)
+- **Not tracked** — list the `ci` and `post-merge` items as informational only, with how to verify each (ci: `gh pr checks`; post-merge: re-check in a later session)
 
 ## Input
 
@@ -107,8 +98,8 @@ After task creation, output a summary showing the count per type with a brief no
 ## Rules
 
 - Always create a PR first, then register tasks. Never create tasks without a successful PR.
-- Respect the user's classification corrections in Phase 4 — do not re-classify after user confirmation.
+- Only `executable` and `manual` items become tasks; `ci` and `post-merge` are summarized, never tracked.
+- Task creation is automatic — do not present a confirmation gate. The classification is deterministic, so there is no choice to confirm; if a misclassification surfaces later, the user can adjust the task directly.
 - If `gh` CLI is not available, complete the git workflow but skip task registration with a warning.
 - Do not modify PR body or add task IDs back to the PR. Tasks reference the PR, not vice versa.
-- If the user cancels task registration in Phase 4, the PR is still created successfully — only task creation is skipped.
 - PR body language follows the repository's conventions (check recent PR history for language preference).
