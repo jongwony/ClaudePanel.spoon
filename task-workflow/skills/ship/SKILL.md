@@ -51,8 +51,8 @@ After PR creation:
 Classify each extracted item into one of four types, applying rules in priority order. The type determines the outcome: **immediate** types (`executable`, `manual`) become tracked tasks; **deferred** types (`ci`, `post-merge`) appear in the closing summary only.
 
 **Priority 1 — `executable`**: Item contains a command in backticks that Claude can run.
-Detection: backtick-wrapped content matching executable patterns — shell commands (`lua`, `node`, `python`, `grep`, `echo`), slash commands (`/verify`, `/task-run`), or CLI invocations.
-Outcome: **tracked task** — can be executed by `/task-run --all` in the current or next session.
+Detection: backtick-wrapped content matching executable patterns — shell commands (`lua`, `node`, `python`, `grep`, `echo`), slash commands (`/verify`), or CLI invocations.
+Outcome: **tracked task** — surfaced in ClaudePanel for execution in the current or a later session.
 
 **Priority 2 — `ci`**: Item depends on CI pipeline results.
 Detection: contains "CI", "pipeline", "workflow", "review pass", "GitHub Actions" AND no backtick-wrapped executable command matching Priority 1 patterns.
