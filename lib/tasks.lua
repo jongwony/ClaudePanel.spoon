@@ -161,9 +161,12 @@ function M.loadAllTasks(config, utils, log)
         return tasks
     end
 
-    -- Load specific session or all sessions
+    -- Load specific session or all sessions.
+    -- Guard against a stale taskListId whose directory no longer exists (e.g. an
+    -- old numeric task-list id left over after the per-session directory scheme
+    -- change): fall back to scanning all sessions instead of pinning to a dead path.
     local sessions = {}
-    if config.taskListId then
+    if config.taskListId and utils.fileExists(tasksDir .. "/" .. config.taskListId) then
         sessions = {config.taskListId}
     else
         sessions = utils.listDir(tasksDir)

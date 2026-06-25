@@ -27,8 +27,11 @@ end
 -- List directory contents
 function M.listDir(path)
     local items = {}
-    local iter, dir = hs.fs.dir(path)
-    if not iter then return items end
+    -- hs.fs.dir raises (not returns nil) when path is missing/inaccessible,
+    -- so wrap in pcall to fail soft to an empty list instead of crashing the
+    -- caller (e.g. a stale taskListId pointing at a removed task directory).
+    local ok, iter, dir = pcall(hs.fs.dir, path)
+    if not ok or not iter then return items end
     for entry in iter, dir do
         if entry ~= "." and entry ~= ".." then
             table.insert(items, entry)
